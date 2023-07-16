@@ -31,7 +31,7 @@ impl Trie {
         longest_common_prefix(&predictions)
     }
 
-    fn predict(&self, key: &str) -> Vec<String> {
+    pub fn predict(&self, key: &str) -> Vec<String> {
         let trie_search_result = self.trie.predictive_search(key);
         (trie_search_result.into_iter()).map(|s| String::from_utf8(s).unwrap()).collect()
     }

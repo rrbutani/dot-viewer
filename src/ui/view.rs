@@ -67,10 +67,26 @@ fn draw_current<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
     let list: Vec<ListItem> = (view.current.items.par_iter())
         .enumerate()
         .map(|(idx, id)| {
-            let mut spans: Vec<Span> = id.chars().map(|c| Span::raw(c.to_string())).collect();
+            let mut spans = Vec::with_capacity(id.len() + 2);
+
+            // Selection status:
+            //
+            // TODO: perhaps this'd look better right-aligned? requires some
+            // extra trickery on our part (either reinvent the logic in `List`
+            // or use the width in `chunk` to truncate/pad the node labels +
+            // append selection status)
+            if view.selection.contains(&idx) {
+                spans.push(Span::styled("✓ ", Style::default().fg(Color::Rgb(150, 255, 150))));
+            } else {
+                spans.push(Span::raw("  "));
+            }
+            let offs = spans.len();
+
+            // Node name with chars styled based on the current search matches:
+            spans.extend(id.chars().map(|c| Span::raw(c.to_string())));
             if let Some(&highlight) = matches.get(&idx) {
                 for &idx in highlight {
-                    spans[idx].style =
+                    spans[offs + idx].style =
                         Style::default().bg(Color::Rgb(120, 120, 120)).add_modifier(Modifier::BOLD);
                 }
             }

@@ -1,5 +1,8 @@
+use std::collections::HashSet;
+
 use crate::viewer::{
     error::{DotViewerError, DotViewerResult},
+    selection::{SelectionInfo, SelectionKind, SelectionOp},
     utils::{List, Tree, Trie},
 };
 
@@ -31,10 +34,15 @@ pub(crate) struct View {
     /// List of next nodes of the currently selected node
     pub nexts: List<String>,
 
-    /// Keyword for match
-    pub key: String,
+    /// Last search pattern
+    pub pattern: String,
     /// List of matching nodes given some input, with highlight index
     pub matches: List<(usize, Vec<usize>)>,
+
+    /// Current selection (set of indexes into `current`)
+    pub selection: HashSet<usize>,
+    /// Stack of operations that led to the current selection
+    pub selection_info: SelectionInfo,
 
     /// Trie for user input autocompletion
     pub trie: Trie,
@@ -48,6 +56,24 @@ pub(crate) enum Focus {
     Current,
     Prev,
     Next,
+}
+
+/// When removing a node (`root`) and its children, lets you pick between:
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RemoveSubgraphCfg {
+    /// Removing all the edges to children of `root`, even those from nodes not
+    /// accessible from `root`.
+    ///
+    /// This guarantees that the children of `root` will be removed from the
+    /// graph.
+    AllEdgesToChildren,
+    /// Removing only the edges contained within the transitive closure of
+    /// `root`.
+    ///
+    /// If there are edges to any children of `root` outside this closure, those
+    /// edges (as well as the children they lead to) will be retained.
+    #[default]
+    LeavesOnly,
 }
 
 impl View {
@@ -64,19 +90,57 @@ impl View {
         let prevs = List::from_iter(Vec::new());
         let nexts = List::from_iter(Vec::new());
 
-        let key = String::new();
+        let pattern = String::new();
         let matches = List::from_iter(Vec::new());
+
+        let selection = HashSet::with_capacity(graph.nodes().len());
+        let selection_info = SelectionInfo::default();
 
         let subtree = Tree::from_graph(&graph);
 
-        let mut view =
-            Self { title, graph, focus, current, prevs, nexts, key, matches, trie, subtree };
+        let mut view = Self {
+            title,
+            graph,
+            focus,
+            current,
+            prevs,
+            nexts,
+            pattern,
+            matches,
+            selection,
+            selection_info,
+            trie,
+            subtree,
+        };
 
         view.update_adjacent().expect("there is always a selected current node on initialization");
 
         Ok(view)
     }
 
+    /// Like [`Self::new`] but propagates a selection.
+    pub fn new_with_selection(&self, title: String, graph: Graph) -> DotViewerResult<Self> {
+        let mut new = Self::new(title, graph)?;
+
+        // The indexes only make sense in the context of a View; since the view
+        // has changed we need to recompute the indexes:
+        let selected_node_indexes = self
+            .selection
+            .par_iter()
+            .map(|&idx| &self.current.items[idx])
+            .filter(|&node_id| new.graph.nodes().contains(node_id))
+            .map(|node_id| new.current.find(node_id).unwrap());
+        new.selection.par_extend(selected_node_indexes);
+
+        new.selection_info = self.selection_info.clone();
+
+        Ok(new)
+    }
+}
+
+// TODO: option to rename the current tab...
+
+impl View {
     /// Navigate to the first node in focused list.
     pub fn goto_first(&mut self) -> DotViewerResult<()> {
         match &self.focus {
@@ -128,7 +192,7 @@ impl View {
     /// The current node list will be focused on the selected node.
     pub fn goto(&mut self, id: &str) -> DotViewerResult<()> {
         let idx = (self.current)
-            .find(id.to_string())
+            .find(id)
             .ok_or(DotViewerError::ViewerError(format!("no such node {id:?}")))?;
 
         self.current.select(idx);
@@ -136,20 +200,60 @@ impl View {
 
         Ok(())
     }
+}
 
-    /// Apply prefix filter on the view given prefix `key`.
-    /// Returns `Ok` with a new `View` if the prefix yields a valid subgraph.
-    pub fn filter(&mut self) -> DotViewerResult<View> {
-        let node_ids: Vec<&String> =
-            (self.matches.items.iter()).map(|(idx, _)| &self.current.items[*idx]).collect();
-        let graph = self.graph.filter(&node_ids);
+impl View {
+    /// Toggles whether the node currently under focus is in the selection.
+    ///
+    /// We expect to only call this function when the focus is on the node list.
+    pub fn toggle(&mut self) -> DotViewerResult<()> {
+        assert!(self.focus == Focus::Current);
+        let node_idx = self
+            .current
+            .state
+            .selected()
+            .ok_or_else(|| DotViewerError::ViewerError("no node selected".to_string()))?;
+
+        // Check if this node is already selected:
+        let op = if self.selection.contains(&node_idx) {
+            self.selection.remove(&node_idx);
+            SelectionOp::Difference
+        } else {
+            self.selection.insert(node_idx);
+            SelectionOp::Union
+        };
+
+        let node_id = self.current.items[node_idx].clone();
+        let kind = SelectionKind::Toggle { node: node_id };
+
+        self.selection_info.push(op, kind);
+        Ok(())
+    }
+}
+
+impl View {
+    /// Filter down the graph to the current selection.
+    ///
+    /// Returns `Ok` with a new `View` if the selection is non-empty.
+    pub fn filter(&self) -> DotViewerResult<View> {
+        let node_ids =
+            (self.selection.iter()).map(|idx| &self.current.items[*idx]);
+        let graph = self.graph.filter(node_ids);
 
         if graph.is_empty() {
-            let key = &self.key;
-            return Err(DotViewerError::ViewerError(format!("no match for keyword {key}")));
+            return Err(DotViewerError::ViewerError(format!("selection is empty")));
         }
 
-        Self::new(format!("{} - {}", self.title, self.key), graph)
+        let selection_depth = self.selection_info.depth();
+        let selection_name = if selection_depth < 5 {
+            format!("select({})", self.selection_info)
+        } else {
+            format!("select(/*{selection_depth} element operator chain*/)")
+        };
+
+        // Don't bother propagating the selection; the new graph *is* the
+        // selection.
+        Self::new(format!("{} | {selection_name}", self.title), graph)
     }
 
     /// Extract a subgraph from the view.
@@ -167,12 +271,61 @@ impl View {
         }
 
         let title = &self.title;
-        Self::new(format!("{title} - {key}"), subgraph)
+        self.new_with_selection(format!("{title} - {key}"), subgraph)
+    }
+
+    // /// Removes the subgraph rooted at the selected id in the view, yielding a
+    // /// new view.
+    // pub fn remove_subgraph(&self, cfg: RemoveSubgraphCfg) -> DotViewerResult<View> {
+
+    //     // TODO: should we actually modify in place and have the caller clone
+    //     // when we want to produce a copy? is that more efficient?
+    //     Ok(todo!())
+    // }
+
+    // TODO: extract_into_subgraph
+    // might be hard..
+
+    // TODO: factor into common function..
+    // TODO: redo labels above and below
+
+    // more like ancestors..
+    pub fn parents(&self, depth: Option<usize>) -> DotViewerResult<View> {
+        let id = self.current_id();
+        let graph = self.graph.parents(&id, depth)?;
+
+        if graph.is_empty() {
+            return Err(DotViewerError::ViewerError(
+                "cannot define a parents graph -- got back an empty graph".to_string(),
+            ));
+        }
+
+        let title = &self.title;
+        let suffix = if let Some(depth) = depth { format!("{depth}") } else { "all".to_string() };
+
+        self.new_with_selection(format!("{title} - parents-{id}-{suffix}"), graph)
+    }
+
+    // really it's more like progeny?
+    pub fn children(&self, depth: Option<usize>) -> DotViewerResult<View> {
+        let id = self.current_id();
+        let graph = self.graph.children(&id, depth)?;
+
+        if graph.is_empty() {
+            return Err(DotViewerError::ViewerError(
+                "cannot define a children graph -- got back an empty graph".to_string(),
+            ));
+        }
+
+        let title = &self.title;
+        let suffix = if let Some(depth) = depth { format!("{depth}") } else { "all".to_string() };
+
+        self.new_with_selection(format!("{title} - children-{id}-{suffix}"), graph)
     }
 
     /// Get neighbors graph from the selected id in the view.
     /// Returns `Ok` with a new `View` if the depth is valid.
-    pub fn neighbors(&mut self, depth: usize) -> DotViewerResult<View> {
+    pub fn neighbors(&self, depth: Option<usize>) -> DotViewerResult<View> {
         let id = self.current_id();
         let graph = self.graph.neighbors(&id, depth)?;
 
@@ -181,11 +334,14 @@ impl View {
         }
 
         let title = &self.title;
-        Self::new(format!("{title} - neighbors-{id}-{depth}"), graph)
+        let suffix = if let Some(depth) = depth { format!("{depth}") } else { "all".to_string() };
+        self.new_with_selection(format!("{title} - neighbors-{id}-{suffix}"), graph)
     }
+}
 
+impl View {
     /// Autocomplete a given keyword, coming from `tab` keybinding.
-    pub fn autocomplete(&mut self, key: &str) -> Option<String> {
+    pub fn autocomplete(&self, key: &str) -> Option<String> {
         self.trie.autocomplete(key)
     }
 
@@ -207,13 +363,15 @@ impl View {
     }
 
     /// Update matches based on the given matching function `match` with input `key`.
-    fn update_matches(&mut self, matcher: Matcher, key: &str) {
+    fn update_matches(&mut self, matcher: Matcher, pattern: &str) {
         let matches: Vec<(usize, Vec<usize>)> = (self.current.items.par_iter())
             .enumerate()
-            .filter_map(|(idx, id)| matcher(id, key, &self.graph).map(|highlight| (idx, highlight)))
+            .filter_map(|(idx, id)| {
+                matcher(id, pattern, &self.graph).map(|highlight| (idx, highlight))
+            })
             .collect();
 
-        self.key = key.to_string();
+        self.pattern = pattern.to_string();
         self.matches = List::from_iter(matches);
     }
 
@@ -234,7 +392,9 @@ impl View {
         let nodes = self.matches.items.iter().map(|(idx, _)| self.current.items[*idx].clone());
         self.trie = Trie::from_iter(nodes);
     }
+}
 
+impl View {
     pub fn current_id(&self) -> String {
         self.current.selected().expect("there is always a current id selected in a view")
     }

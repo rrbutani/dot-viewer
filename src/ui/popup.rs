@@ -17,6 +17,7 @@ pub(super) fn draw_popup<B: Backend>(f: &mut Frame<B>, size: Rect, app: &mut App
         Mode::Popup(pmode) => match pmode {
             PopupMode::Tree => draw_tree(f, popup, app),
             PopupMode::Help => draw_help(f, popup, app),
+            PopupMode::SelectionStack => draw_selection_stack(f, popup, app)
         },
         _ => unreachable!(),
     };
@@ -64,4 +65,13 @@ fn draw_help<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App) {
         ]);
 
     f.render_stateful_widget(table, chunk, &mut app.help.state);
+}
+
+
+fn draw_selection_stack<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App) {
+    let selection_info = &app.tabs.selected().selection_info;
+
+    todo!()
+
+    // colors for operators, other than that keep it simple?
 }

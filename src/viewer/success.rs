@@ -1,17 +1,12 @@
 use std::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum Success {
     ExportSuccess(String),
     XdotSuccess,
+    #[default]
     Silent,
-}
-
-impl Default for Success {
-    fn default() -> Self {
-        Self::Silent
-    }
 }
 
 impl fmt::Display for Success {

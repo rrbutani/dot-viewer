@@ -7,14 +7,17 @@ use crate::viewer::{
 };
 
 use crossterm::event::{KeyCode, KeyEvent};
+use graphviz_rs::prelude::EdgeId;
 use log::{info, warn};
+
+use super::command::Export;
 
 impl App {
     pub fn key(&mut self, key: KeyEvent) {
         info!("{:?}", key.code);
 
         self.result = match key.code {
-            KeyCode::Char(c) => self.char(c).map(|_| Success::default()),
+            KeyCode::Char(c) => self.char(c),
             KeyCode::Enter => self.enter(),
             KeyCode::Backspace => self.backspace().map(|_| Success::default()),
             KeyCode::Esc => self.esc().map(|_| Success::default()),
@@ -34,22 +37,24 @@ impl App {
         self.lookback = Some(key.code);
     }
 
-    fn char(&mut self, c: char) -> DotViewerResult<()> {
+    fn char(&mut self, c: char) -> DotViewerResult<Success> {
         match &self.mode {
-            Mode::Normal => self.char_normal(c)?,
+            Mode::Normal => return self.char_normal(c),
             Mode::Command => self.char_command(c)?,
+            Mode::Selection => self.char_selection(c)?,
             Mode::Search(_) => self.char_search(c),
             Mode::Popup(_) => self.char_popup(c)?,
         };
 
-        Ok(())
+        Ok(Success::default())
     }
 
-    fn char_normal(&mut self, c: char) -> DotViewerResult<()> {
+    fn char_normal(&mut self, c: char) -> DotViewerResult<Success> {
         match c {
             '/' => self.set_search_mode(SearchMode::Fuzzy),
             'r' => self.set_search_mode(SearchMode::Regex),
             ':' => self.set_command_mode(),
+            's' => self.set_selection_mode(),
             'c' => self.tabs.close()?,
             'h' => self.left()?,
             'j' => self.down()?,
@@ -58,14 +63,79 @@ impl App {
             'n' => self.goto_next_match()?,
             'N' => self.goto_prev_match()?,
             'g' => self.goto_first()?,
-            'G' => self.goto_last()?,
+            'G' => self.goto_last()?, // TODO: document
+            'q' => {
+                self.quit = true;
+            }
+            '?' => self.set_popup_mode(PopupMode::Help),
+            'e' => return self.export(Export { filename: None }),
+            'd' => {
+                // TODO: remove, for testing only
+                let view = self.tabs.selected();
+                let node_id = view.current.selected().unwrap();
+                let elem_id = view.current.state.selected().unwrap();
+
+                // redundant in this case...
+                let current_focus = view.current.selected().unwrap();
+
+                let froms = view.graph.froms(&node_id).unwrap();
+                let tos = view.graph.tos(&node_id).unwrap();
+                let edges = froms
+                    .into_iter()
+                    .map(|f| EdgeId {
+                        from: f.clone(),
+                        tailport: None,
+                        to: node_id.clone(),
+                        headport: None,
+                    })
+                    .chain(tos.into_iter().map(|t| EdgeId {
+                        from: node_id.clone(),
+                        tailport: None,
+                        to: t.clone(),
+                        headport: None,
+                    }))
+                    .collect::<Vec<_>>();
+                view.graph.remove_edges(&edges).unwrap();
+
+                view.graph.remove_nodes([&node_id]).unwrap();
+
+                // adjust state:
+                let node_ids = view.graph.topsort().unwrap(); // TODO: handle error
+                let node_ids = node_ids.iter().map(|&id| id.clone());
+
+                view.trie = super::utils::Trie::from_iter(node_ids.clone());
+                view.current = super::utils::List::from_iter(node_ids);
+
+
+                view.pattern = String::new();
+                view.matches = super::utils::List::from_iter(Vec::new());
+
+                view.selection.remove(&elem_id);
+                // let selection = HashSet::with_capacity(graph.nodes().len());
+                // let selection_info = SelectionInfo::default();
+                // TODO^^^
+
+                if let Ok(_) = view.goto(&current_focus) {
+
+                } else {
+                    view.focus = Focus::Current;
+                    view.prevs = super::utils::List::from_iter(Vec::new());
+                    view.nexts = super::utils::List::from_iter(Vec::new());
+                }
+
+            }
             _ => Err(DotViewerError::KeyError(KeyCode::Char(c)))?,
         };
 
-        Ok(())
+        Ok(Success::default())
     }
 
     fn char_command(&mut self, c: char) -> DotViewerResult<()> {
+        self.input.insert(c);
+        Ok(())
+    }
+
+    fn char_selection(&mut self, c: char) -> DotViewerResult<()> {
         self.input.insert(c);
         Ok(())
     }
@@ -80,6 +150,7 @@ impl App {
             Mode::Popup(pmode) => match pmode {
                 PopupMode::Tree => self.char_tree(c),
                 PopupMode::Help => self.char_help(c),
+                PopupMode::SelectionStack => self.char_selection_stack_popup(c),
             },
             _ => unreachable!(),
         }
@@ -103,13 +174,18 @@ impl App {
         }
     }
 
+    fn char_selection_stack_popup(&mut self, c: char) -> DotViewerResult<()> {
+        todo!()
+    }
+
     fn enter(&mut self) -> DotViewerResult<Success> {
         match &self.mode {
             Mode::Normal => {
                 let view = self.tabs.selected();
                 view.enter().map(|_| Success::default())
             }
-            Mode::Command => self.exec(),
+            Mode::Command => self.exec_command(),
+            Mode::Selection => self.exec_selection_command(),
             Mode::Search(_) => {
                 self.set_normal_mode();
                 Ok(Success::default())
@@ -148,6 +224,7 @@ impl App {
         match &self.mode {
             Mode::Normal => self.tabs.next(),
             Mode::Command => self.autocomplete_command(),
+            Mode::Selection => self.autocomplete_selection_command(),
             Mode::Search(smode) => match smode {
                 SearchMode::Fuzzy => self.autocomplete_fuzzy(),
                 SearchMode::Regex => self.autocomplete_regex(),
@@ -176,6 +253,7 @@ impl App {
             Mode::Popup(pmode) => match pmode {
                 PopupMode::Tree => view.subtree.up(),
                 PopupMode::Help => self.help.previous(),
+                PopupMode::SelectionStack => {}
             },
             _ => Err(DotViewerError::KeyError(KeyCode::Up))?,
         };
@@ -191,6 +269,7 @@ impl App {
             Mode::Popup(pmode) => match pmode {
                 PopupMode::Tree => view.subtree.down(),
                 PopupMode::Help => self.help.next(),
+                PopupMode::SelectionStack => {}
             },
             _ => Err(DotViewerError::KeyError(KeyCode::Down))?,
         };
@@ -237,7 +316,7 @@ impl View {
     pub fn enter(&mut self) -> DotViewerResult<()> {
         match &self.focus {
             Focus::Prev | Focus::Next => self.goto_adjacent(),
-            Focus::Current => Ok(()),
+            Focus::Current => self.toggle(),
         }
     }
 

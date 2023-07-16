@@ -19,10 +19,10 @@ pub fn launch(path: String) -> Result<(), Box<dyn Error>> {
     let mut terminal = setup()?;
 
     // create and run app
-    let app = App::new(&path).map_err(|_| {
+    let app = App::new(&path).map_err(|err| {
         let _ = cleanup();
 
-        Box::<dyn Error>::from("user should provide path to a valid dot file")
+        Box::<dyn Error>::from(format!("user should provide path to a valid dot file: {err}"))
     })?;
     let _ = run(&mut terminal, app);
 

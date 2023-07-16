@@ -8,11 +8,13 @@ use crate::viewer::{
     view::View,
 };
 
-use std::fs;
+use std::{fs, ops::Not};
 
 use graphviz_rs::prelude::*;
 
 use crossterm::event::KeyCode;
+
+use super::command::{Children, Export, Filter, Neighbors, Parents, Xdot};
 
 /// `App` holds `dot-viewer` application states.
 ///
@@ -145,7 +147,7 @@ impl App {
 
     /// Autocomplete user input.
     pub fn autocomplete_command(&mut self) {
-        let command = Command::parse(&self.input.key);
+        let command = Command::parse(&self.input.key, false);
 
         if command == Command::NoMatch {
             self.autocomplete_cmd()
@@ -159,31 +161,35 @@ impl App {
         }
     }
 
+    pub fn autocomplete_selection_command(&mut self) {
+        todo!()
+    }
+
     /// Parse and execute dot-viewer command
-    pub fn exec(&mut self) -> DotViewerResult<Success> {
-        let command = Command::parse(&self.input.key);
+    pub fn exec_command(&mut self) -> DotViewerResult<Success> {
+        use Command::*;
+        let command = Command::parse(&self.input.key, true);
 
         match command {
-            Command::Neighbors(neighbors) => neighbors.depth.map_or(
-                Err(DotViewerError::CommandError("No argument supplied for neighbors".to_string())),
-                |depth| self.neighbors(depth).map(|_| Success::default()),
-            ),
-            Command::Export(export) => self.export(export.filename),
-            Command::Xdot(xdot) => self.xdot(xdot.filename),
-            Command::Filter => self.filter().map(|_| Success::default()),
-            Command::Help => {
+            Children(c) => self.children(c).map(|_| Success::default()),
+            Parents(p) => self.parents(p).map(|_| Success::default()),
+            Neighbors(n) => self.neighbors(n).map(|_| Success::default()),
+            Export(e) => self.export(e),
+            Xdot(x) => self.xdot(x),
+            Filter(f) => self.filter(f).map(|_| Success::default()),
+            Help => {
                 self.set_popup_mode(PopupMode::Help);
                 Ok(Success::default())
             }
-            Command::Subgraph => {
+            Subgraph => {
                 self.set_popup_mode(PopupMode::Tree);
                 Ok(Success::default())
             }
-            Command::Quit => {
+            Quit => {
                 self.quit = true;
                 Ok(Success::default())
             }
-            Command::NoMatch => {
+            NoMatch => {
                 self.set_normal_mode();
 
                 let key = &self.input.key;
@@ -192,40 +198,84 @@ impl App {
         }
     }
 
-    /// Extract a subgraph which is a neighbor graph from the currently selected node,
-    /// with specified depth.
-    /// It opens a new tab with the neighbor graph view.
-    pub fn neighbors(&mut self, depth: usize) -> DotViewerResult<()> {
+    pub fn exec_selection_command(&mut self) -> DotViewerResult<Success> {
+        todo!();
+    }
+
+    fn new_view_helper(
+        &mut self,
+        func: impl FnOnce(&View) -> DotViewerResult<View>,
+        in_place: bool,
+    ) -> DotViewerResult<()> {
         self.set_normal_mode();
 
-        let view_current = self.tabs.selected();
-        let view_new = view_current.neighbors(depth)?;
-        self.tabs.open(view_new);
+        let current: &mut View = self.tabs.selected();
+        let new = func(current)?;
+
+        // Cannot replace the first tab.
+        let selection_is_first_tab = self.tabs.state == 0;
+        if in_place && !selection_is_first_tab {
+            *self.tabs.selected() = new;
+        } else {
+            self.tabs.open(new);
+        }
 
         Ok(())
     }
 
+    /// Extract a subgraph consisting of parents (ancestors) of the selected
+    /// node, up to a specified depth (optional).
+    pub fn parents(&mut self, Parents { depth, in_place }: Parents) -> DotViewerResult<()> {
+        self.new_view_helper(|curr| curr.parents(depth), in_place)
+    }
+
+    /// Extract a subgraph consisting of children of the selected node, up to
+    /// a specified depth (optional).
+    pub fn children(&mut self, Children { depth, in_place }: Children) -> DotViewerResult<()> {
+        self.new_view_helper(|curr| curr.children(depth), in_place)
+    }
+
+    /// Extract a subgraph which is a neighbor graph from the currently selected node,
+    /// up to a specified depth (optional)
+    pub fn neighbors(&mut self, Neighbors { depth, in_place }: Neighbors) -> DotViewerResult<()> {
+        self.new_view_helper(|curr| curr.neighbors(depth), in_place)
+    }
+
+    /// Apply filter on the current view, based on the current matches.
+    /// Opens a new tab with the filtered view.
+    pub fn filter(&mut self, Filter { in_place }: Filter) -> DotViewerResult<()> {
+        self.new_view_helper(|curr| curr.filter(), in_place)
+    }
+
     /// Export the current view to dot.
-    pub fn export(&mut self, filename: Option<String>) -> DotViewerResult<Success> {
+    pub fn export(&mut self, Export { filename }: Export) -> DotViewerResult<Success> {
         self.set_normal_mode();
 
         let viewer = self.tabs.selected();
         let graph = &viewer.graph;
+        let selected = viewer
+            .selection
+            .is_empty()
+            .not()
+            .then(|| viewer.selection.iter().map(|&idx| &viewer.current.items[idx]));
+
+        // TODO: write out selection stack?
 
         let default: String = viewer.title.chars().filter(|c| !c.is_whitespace()).collect();
         let filename = filename.unwrap_or(format!("{default}.dot"));
 
-        write_graph(filename, graph)
+        write_graph(filename, graph, selected)
     }
 
     /// Launch `xdot.py`.
-    pub fn xdot(&mut self, filename: Option<String>) -> DotViewerResult<Success> {
+    pub fn xdot(&mut self, Xdot { filename }: Xdot) -> DotViewerResult<Success> {
         self.set_normal_mode();
 
         let filename = filename.unwrap_or_else(|| "current.dot".to_string());
         let path = format!("./exports/{filename}");
 
         if !std::path::Path::new("./exports/current.dot").exists() {
+            // TODO: fix error message; say you need to export first
             return Err(DotViewerError::XdotError);
         }
 
@@ -236,18 +286,6 @@ impl App {
             .spawn();
 
         xdot.map(|_| Success::XdotSuccess).map_err(|_| DotViewerError::XdotError)
-    }
-
-    /// Apply filter on the current view, based on the current matches.
-    /// Opens a new tab with the filtered view.
-    pub fn filter(&mut self) -> DotViewerResult<()> {
-        self.set_normal_mode();
-
-        let view_current = self.tabs.selected();
-        let view_new = view_current.filter()?;
-        self.tabs.open(view_new);
-
-        Ok(())
     }
 
     /// Extract a subgraph from the current view.
@@ -273,6 +311,12 @@ impl App {
         self.mode = Mode::Command;
     }
 
+    pub fn set_selection_mode(&mut self) {
+        self.input.clear();
+
+        self.mode = Mode::Selection;
+    }
+
     pub fn set_search_mode(&mut self, smode: SearchMode) {
         self.input.clear();
 
@@ -294,10 +338,37 @@ fn valid_filename(filename: &str) -> bool {
     (!filename.contains('/')) && filename.ends_with(".dot")
 }
 
-fn write_graph(filename: String, graph: &Graph) -> DotViewerResult<Success> {
+fn write_graph<'a>(
+    filename: String,
+    graph: &Graph,
+    selection: Option<impl Iterator<Item = &'a NodeId>>,
+) -> DotViewerResult<Success> {
     if !valid_filename(&filename) {
         return Err(DotViewerError::CommandError(format!("invalid dot filename: {filename}")));
     }
+
+    let mut graph = graph;
+    let mut highlighted_graph;
+    if let Some(selection) = selection {
+        highlighted_graph = graph.clone();
+
+        for node_id in selection {
+            highlighted_graph
+                .modify_node_attrs(node_id, |attrs| {
+                    attrs.insert(Attr::new("style".to_string(), "filled".to_string(), false));
+                    attrs.insert(Attr::new(
+                        "fillcolor".to_string(),
+                        "#78787860".to_string(),
+                        false,
+                    ));
+                })
+                .unwrap();
+        }
+
+        graph = &highlighted_graph;
+    }
+
+    // TODO: write out the file and _then_ swap it into place so that xdot doesn't freak out as much
 
     let mut open_options = fs::OpenOptions::new();
     let open_options = open_options.write(true).truncate(true).create(true);

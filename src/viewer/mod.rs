@@ -4,6 +4,7 @@ mod error;
 mod help;
 mod keybindings;
 mod modes;
+mod selection;
 mod success;
 mod utils;
 mod view;

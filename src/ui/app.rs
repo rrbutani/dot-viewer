@@ -19,9 +19,10 @@ pub(crate) fn draw_app<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     f.render_widget(block, size);
 
+    use Mode::*;
     match &app.mode {
-        Mode::Normal | Mode::Command | Mode::Search(_) => draw_main(f, size, app),
-        Mode::Popup(_) => draw_popup(f, size, app),
+        Normal | Command | Selection | Search(_) => draw_main(f, size, app),
+        Popup(_) => draw_popup(f, size, app),
     }
 }
 
