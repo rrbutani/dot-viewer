@@ -55,18 +55,7 @@ $ xdot *.dot
 
 ## b. Installation
 
-### i. Initialize
-
-First initialize and update the submodule `dot-graph`.
-
-```console
-$ git submodule init
-$ git submodule update
-```
-
-### ii. Run
-
-Then run crate.
+Run crate.
 
 ```console
 $ cargo run --release [path-to-dot-file]
@@ -82,7 +71,7 @@ With `dot-viewer`, users may
 - goto next/prev node of the currently selected node
 - fuzzy search on node name
 - regex search on node name and attributes
- 
+
 
 **make and export subgraphs** using,
 - subgraph tree selection
