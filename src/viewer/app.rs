@@ -14,7 +14,7 @@ use graphviz_rs::prelude::*;
 
 use crossterm::event::KeyCode;
 
-use super::command::{Children, Export, Filter, Neighbors, Parents, Xdot};
+use super::command::{Children, Export, Filter, Neighbors, Parents, Remove, Xdot, MakeSubgraph, MakeStub};
 
 /// `App` holds `dot-viewer` application states.
 ///
@@ -147,9 +147,7 @@ impl App {
 
     /// Autocomplete user input.
     pub fn autocomplete_command(&mut self) {
-        let command = Command::parse(&self.input.key, false);
-
-        if command == Command::NoMatch {
+        if Command::parse(&self.input.key, false).is_err() {
             self.autocomplete_cmd()
         }
     }
@@ -168,9 +166,22 @@ impl App {
     /// Parse and execute dot-viewer command
     pub fn exec_command(&mut self) -> DotViewerResult<Success> {
         use Command::*;
-        let command = Command::parse(&self.input.key, true);
+        let command = match Command::parse(&self.input.key, true) {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                self.set_normal_mode();
+
+                let key = &self.input.key;
+                return Err(DotViewerError::CommandError(format!(
+                    "Error when parsing '{key}': {e}"
+                )));
+            }
+        };
 
         match command {
+            MakeStub(s) => self.make_stub(s).map(|_| Success::default()),
+            MakeSubgraph(s) => self.make_subgraph(s).map(|_| Success::default()),
+            RemoveSelection(r) => self.remove_selection(r).map(|_| Success::default()),
             Children(c) => self.children(c).map(|_| Success::default()),
             Parents(p) => self.parents(p).map(|_| Success::default()),
             Neighbors(n) => self.neighbors(n).map(|_| Success::default()),
@@ -189,12 +200,6 @@ impl App {
                 self.quit = true;
                 Ok(Success::default())
             }
-            NoMatch => {
-                self.set_normal_mode();
-
-                let key = &self.input.key;
-                Err(DotViewerError::CommandError(format!("No such command {key}")))
-            }
         }
     }
 
@@ -202,15 +207,19 @@ impl App {
         todo!();
     }
 
-    fn new_view_helper(
+    fn new_view_helper_with_err_handler<E>(
         &mut self,
-        func: impl FnOnce(&View) -> DotViewerResult<View>,
+        func: impl FnOnce(&View) -> Result<View, E>,
         in_place: bool,
+        on_err: impl FnOnce(&mut View, E) -> DotViewerError,
     ) -> DotViewerResult<()> {
         self.set_normal_mode();
 
         let current: &mut View = self.tabs.selected();
-        let new = func(current)?;
+        let new = match func(current) {
+            Ok(new) => new,
+            Err(err) => return Err(on_err(current, err)),
+        };
 
         // Cannot replace the first tab.
         let selection_is_first_tab = self.tabs.state == 0;
@@ -223,19 +232,100 @@ impl App {
         Ok(())
     }
 
-    /// Extract a subgraph consisting of parents (ancestors) of the selected
+    fn new_view_helper(
+        &mut self,
+        func: impl FnOnce(&View) -> DotViewerResult<View>,
+        in_place: bool,
+    ) -> DotViewerResult<()> {
+        self.new_view_helper_with_err_handler(func, in_place, |_, e| e)
+    }
+
+    // Can't resolve lifetime errors; need HRTB with lifetime bounds I think
+    /*
+        fn remove<'n, D: Display, I: IntoIterator<Item = &'n NodeId>>(
+        &mut self,
+        Remove { cfg, in_place }: Remove,
+        pick_nodes_to_remove: impl FnOnce(&View) -> (I, Option<D>),
+    ) -> DotViewerResult<()> {
+        self.new_view_helper_with_err_handler(
+            |curr| {
+                let (selection, info) = pick_nodes_to_remove(curr);
+                curr.remove(selection, cfg, info)
+            },
+            in_place,
+            |curr, (err, new_focus_node)| {
+                if let Some(focus) = &new_focus_node {
+                    curr.goto(focus).unwrap();
+                }
+
+                err
+            },
+        )
+    }
+    */
+
+    /// Attempts to remove the currently selected nodes.
+    pub fn remove_selection(&mut self, Remove { cfg, in_place }: Remove) -> DotViewerResult<()> {
+        self.new_view_helper_with_err_handler(
+            |curr| {
+                curr.remove(curr.selection_as_node_ids(), cfg, Some(&curr.selection_info))
+            },
+            in_place,
+            |curr, (err, new_focus_node)| {
+                if let Some(focus) = &new_focus_node {
+                    curr.goto(focus).unwrap();
+                }
+
+                err
+            },
+        )
+    }
+
+    /// Attempts to remove the given nodes.
+    pub fn remove_nodes(
+        &mut self,
+        Remove { cfg, in_place }: Remove,
+        nodes: impl IntoIterator<Item = NodeId>,
+    ) -> DotViewerResult<()> {
+        self.new_view_helper_with_err_handler(
+            |curr| {
+                let to_remove: Vec<_> = nodes.into_iter().collect();
+                let info = if to_remove.len() < 5 {
+                    format!("{to_remove:?}")
+                } else {
+                    format!("list of {n} nodes", n = to_remove.len())
+                };
+                curr.remove(to_remove.iter(), cfg, Some(info))
+            },
+            in_place,
+            |_curr, (err, _new_focus_node)| {
+                // these node(s) will sometimes (always?) come from the current
+                // focus so don't change the focus on error; the jumping around
+                // may be annoying
+                /*
+                if let Some(focus) = &new_focus_node {
+                    curr.goto(focus).unwrap();
+                }
+                */
+
+                err
+            },
+        )
+    }
+
+    /// Extract a new view consisting of parents (ancestors) of the selected
     /// node, up to a specified depth (optional).
     pub fn parents(&mut self, Parents { depth, in_place }: Parents) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.parents(depth), in_place)
     }
 
-    /// Extract a subgraph consisting of children of the selected node, up to
+    /// Extract a new view consisting of children of the selected node, up to
     /// a specified depth (optional).
     pub fn children(&mut self, Children { depth, in_place }: Children) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.children(depth), in_place)
     }
 
-    /// Extract a subgraph which is a neighbor graph from the currently selected node,
+    /// Extract a new view which is a neighbor graph from the currently selected node,
     /// up to a specified depth (optional)
     pub fn neighbors(&mut self, Neighbors { depth, in_place }: Neighbors) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.neighbors(depth), in_place)
@@ -245,6 +335,14 @@ impl App {
     /// Opens a new tab with the filtered view.
     pub fn filter(&mut self, Filter { in_place }: Filter) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.filter(), in_place)
+    }
+
+    pub fn make_stub(&mut self, MakeStub { name, in_place }: MakeStub) -> DotViewerResult<()> {
+        self.new_view_helper(|curr| curr.make_stub(&name), in_place)
+    }
+
+    pub fn make_subgraph(&mut self, MakeSubgraph { name, in_place }: MakeSubgraph) -> DotViewerResult<()> {
+        self.new_view_helper(|curr| curr.make_new_subgraph(&name), in_place)
     }
 
     /// Export the current view to dot.

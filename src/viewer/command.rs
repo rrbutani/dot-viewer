@@ -1,5 +1,10 @@
+use std::str::FromStr;
+
 use crate::viewer::utils::Trie;
-use clap::builder::{Arg, Command as ClapCommand};
+use clap::{
+    builder::{Arg, Command as ClapCommand},
+    ValueEnum,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Command {
@@ -11,8 +16,11 @@ pub(crate) enum Command {
 
     // TODO: remove: removes selection nodes
     // TODO: MakeStub
-    // TODO: MakeSubgraph
-    // MakeSubgraph { name: String },
+    MakeStub(MakeStub),
+    MakeSubgraph(MakeSubgraph),
+
+    /// Removes nodes in the selection (+ edges to/from those nodes, optionally)
+    RemoveSelection(Remove),
 
     Children(Children),
     Parents(Parents),
@@ -23,10 +31,69 @@ pub(crate) enum Command {
     Help,
     Subgraph,
     Quit,
-    NoMatch,
 }
 
 // TODO: try the clap derive thing instead? nah
+
+/// Removes the edges to/from nodes in the selection.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct Remove {
+    pub cfg: RemoveCfg,
+    pub in_place: bool,
+}
+
+/// When removing selected nodes, let's you pick how to handle extant edges
+/// from the nodes that will be removed.
+///
+/// Note: If there are any extant edges, the operation will fail; this really
+/// is letting you pick between failing if there are remaining edges or force
+/// removing the edges.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+pub(crate) enum RemoveCfg {
+    /// Removes all the edges to/from selected nodes.
+    ///
+    /// This guarantees that the nodes will be removed from the graph (unless
+    /// doing so would produce an empty graph).
+    #[default]
+    AllEdges,
+    /// Removes all edges _from_ selected nodes.
+    EdgesFrom,
+    /// Removes all edges _to_ selected nodes.
+    EdgesTo,
+    /// Does not remove any edges.
+    NoEdges,
+}
+
+impl FromStr for RemoveCfg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match &*s.to_lowercase() {
+            "all" | "force" | "a" => Self::AllEdges,
+            "from" | "f" | "out" | "outgoing" => Self::EdgesFrom,
+            "to" | "t" | "in" | "incoming" => Self::EdgesTo,
+            "none" | "n" | "safe" => Self::NoEdges,
+            _ => {
+                return Err(format!(
+                    "could not parse `{s}` as a `RemoveCfg`; try `all`, `from`, \
+                `to`, or `none`"
+                ))
+            }
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct MakeStub {
+    pub(crate) name: String,
+    pub(crate) in_place: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct MakeSubgraph {
+    pub(crate) name: String,
+    pub(crate) in_place: bool,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Children {
@@ -65,10 +132,14 @@ pub(crate) struct CommandTrie {
     pub(crate) trie_cmd: Trie,
 }
 
-fn subcommands() -> [ClapCommand; 10] {
+fn subcommands() -> [ClapCommand; 12] {
     [
+        ClapCommand::new("mk-stub")
+            .arg(Arg::new("name").value_parser(clap::value_parser!(String)).required(true)),
         ClapCommand::new("mk-subgraph")
             .arg(Arg::new("name").value_parser(clap::value_parser!(String)).required(true)),
+        ClapCommand::new("remove")
+            .arg(Arg::new("cfg").value_parser(clap::value_parser!(RemoveCfg))),
         ClapCommand::new("children")
             .arg(Arg::new("depth").value_parser(clap::value_parser!(usize))),
         ClapCommand::new("parents").arg(Arg::new("depth").value_parser(clap::value_parser!(usize))),
@@ -92,7 +163,7 @@ fn commands() -> ClapCommand {
 }
 
 impl Command {
-    pub fn parse(input: &str, allow_prefix_match: bool) -> Self {
+    pub fn parse(input: &str, allow_prefix_match: bool) -> Result<Self, clap::Error> {
         let mut inputs: Vec<&str> = input.split_whitespace().collect();
         let in_place = inputs
             .first_mut()
@@ -106,31 +177,46 @@ impl Command {
             })
             .unwrap_or(false);
 
-        if let Ok(cmd) = Self::parse_tokenized(&inputs, in_place) {
-            return cmd
-        } else if allow_prefix_match {
-            // If there's exactly one command that has what was entered for the
-            // first arg as a prefix, continue as if that command had been
-            // entered:
-            let trie = CommandTrie::new();
-            if let Some(unambiguous_prefix_match) = inputs
-                .first()
-                .filter(|f| !f.is_empty())
-                .map(|f| trie.trie_cmd.predict(f))
-                .filter(|p| p.len() == 1)
-                .map(|p| p[0].clone())
-            {
-                inputs[0] = &*unambiguous_prefix_match;
-                return Self::parse_tokenized(&inputs, in_place).unwrap_or(Self::NoMatch)
+        match Self::parse_tokenized(&inputs, in_place) {
+            Ok(cmd) => Ok(cmd),
+            Err(e) => {
+                // If there's exactly one command that has what was entered for
+                // the first arg as a prefix, continue as if that command had
+                // been entered:
+                if allow_prefix_match {
+                    let trie = CommandTrie::new();
+                    if let Some(unambiguous_prefix_match) = inputs
+                        .first()
+                        .filter(|f| !f.is_empty())
+                        .map(|f| trie.trie_cmd.predict(f))
+                        .filter(|p| p.len() == 1)
+                        .map(|p| p[0].clone())
+                    {
+                        inputs[0] = &*unambiguous_prefix_match;
+                        return Self::parse_tokenized(&inputs, in_place);
+                    }
+                }
+
+                Err(e)
             }
         }
-
-        Self::NoMatch
     }
 
-    fn parse_tokenized(inputs: &[&str], in_place: bool) -> Result<Self, ()> {
+    fn parse_tokenized(inputs: &[&str], in_place: bool) -> Result<Self, clap::Error> {
         match commands().try_get_matches_from(inputs) {
             Ok(matches) => Ok(match matches.subcommand() {
+                Some(("mk-stub", matches)) => Self::MakeStub(MakeStub {
+                    name: matches.get_one::<String>("name").cloned().unwrap(),
+                    in_place,
+                }),
+                Some(("mk-subgraph", matches)) => Self::MakeSubgraph(MakeSubgraph {
+                    name: matches.get_one::<String>("name").cloned().unwrap(),
+                    in_place,
+                }),
+                Some(("remove", matches)) => Self::RemoveSelection(Remove {
+                    cfg: matches.get_one::<RemoveCfg>("cfg").copied().unwrap_or_default(),
+                    in_place,
+                }),
                 Some(("children", matches)) => Self::Children(Children {
                     depth: matches.get_one::<usize>("depth").copied(),
                     in_place,
@@ -156,7 +242,7 @@ impl Command {
                 Some(("quit", _)) => Self::Quit,
                 _ => unreachable!(),
             }),
-            Err(_) => Err(()),
+            Err(e) => Err(e),
         }
     }
 }

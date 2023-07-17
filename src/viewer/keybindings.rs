@@ -7,10 +7,9 @@ use crate::viewer::{
 };
 
 use crossterm::event::{KeyCode, KeyEvent};
-use graphviz_rs::prelude::EdgeId;
 use log::{info, warn};
 
-use super::command::Export;
+use super::command::{Export, Remove, RemoveCfg};
 
 impl App {
     pub fn key(&mut self, key: KeyEvent) {
@@ -64,90 +63,20 @@ impl App {
             'N' => self.goto_prev_match()?,
             'g' => self.goto_first()?,
             'G' => self.goto_last()?, // TODO: document
+            // layering violations:
+            ' ' => self.tabs.selected().enter()?,
+            '?' => self.set_popup_mode(PopupMode::Help),
             'q' => {
                 self.quit = true;
             }
-            '?' => self.set_popup_mode(PopupMode::Help),
             'e' => return self.export(Export { filename: None }),
-            'd' => {
-                // TODO: remove, for testing only
-                let view = self.tabs.selected();
-                let node_ids_to_remove =
-                    std::collections::HashSet::from([view.current.selected().unwrap()]);
-                let elem_id = view.current.state.selected().unwrap();
-
-                if node_ids_to_remove.len() == view.graph.nodes().len() {
-                    return Err(DotViewerError::CommandError(
-                        "cannot remove all nodes from graph".to_string(),
-                    ));
+            'd' | 'D' => {
+                if let Some(ref curr_node) = self.tabs.selected().current.selected() {
+                    let cfg = if c == 'd' { RemoveCfg::EdgesFrom } else { RemoveCfg::AllEdges };
+                    return self
+                        .remove_nodes(Remove { cfg, in_place: true }, [curr_node.clone()])
+                        .map(|_| Success::Silent);
                 }
-
-                use rayon::prelude::{
-                    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
-                };
-
-                // TODO: par iter
-                let froms = node_ids_to_remove.par_iter().flat_map(|n| {
-                    view.graph
-                        .froms(n)
-                        .unwrap()
-                        .into_par_iter()
-                        .map(|from| (from.clone(), n.clone()))
-                });
-                let tos = node_ids_to_remove.par_iter().flat_map(|n| {
-                    view.graph.tos(n).unwrap().into_par_iter().map(|to| (n.clone(), to.clone()))
-                });
-                let edges = froms
-                    .chain(tos)
-                    .map(|(from, to)| EdgeId { from, tailport: None, to, headport: None })
-                    .collect::<Vec<_>>();
-                view.graph.remove_edges(&edges).unwrap();
-
-                view.graph.remove_nodes(&node_ids_to_remove).unwrap();
-
-                // adjust state:
-                let node_ids = view.graph.topsort().unwrap(); // TODO: handle error: cycle? (impossible to form a cycle just be _removing_ nodes + edges)
-                let node_ids = node_ids.iter().map(|&id| id.clone());
-
-                view.trie = super::utils::Trie::from_iter(node_ids.clone());
-                // view.current = super::utils::List::from_iter(node_ids);
-                let old_list =
-                    std::mem::replace(&mut view.current, super::utils::List::from_iter(node_ids));
-
-                view.pattern = String::new();
-                view.matches = super::utils::List::from_iter(Vec::new());
-
-                view.selection.remove(&elem_id);
-                // let selection = HashSet::with_capacity(graph.nodes().len());
-                // let selection_info = SelectionInfo::default();
-                // TODO^^^
-
-                // try to find a new focus point by walking backwards from the
-                // old one (by index -- i.e. position in the old topo-sorted
-                // list) until we hit a node that exists
-                let _new_focus_point = 'new_focus_point: {
-                    for old_idx_pos in (0..=elem_id).rev() {
-                        let node_id = &old_list.items[old_idx_pos];
-                        if view.graph.nodes().contains(&node_id) {
-                            if view.goto(node_id).is_ok() {
-                                break 'new_focus_point Some(());
-                            }
-                        }
-                    }
-
-                    view.focus = Focus::Current;
-                    view.prevs = super::utils::List::from_iter(Vec::new());
-                    view.nexts = super::utils::List::from_iter(Vec::new());
-                    None
-                };
-
-                // redundant in this case...
-                // let current_focus = old_list;
-
-                // if let Ok(_) = view.goto(&current_focus) {
-
-                // } else {
-                // }
             }
             _ => Err(DotViewerError::KeyError(KeyCode::Char(c)))?,
         };

@@ -5,6 +5,7 @@ use std::borrow::Borrow;
 use tui::widgets::ListState;
 
 // https://github.com/fdehau/tui-rs/blob/master/examples/list.rs
+#[derive(Debug, Clone)]
 pub(crate) struct List<T> {
     pub state: ListState,
     pub items: Vec<T>,

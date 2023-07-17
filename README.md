@@ -229,3 +229,9 @@ Key | Actions
   - [ ] misc: `e` for export (in addition to `:export`)
 
   - [ ] misc(export): write out the file and _then_ swap it into place so that xdot doesn't freak out as much
+
+  - [ ] TODO: have `d` remove edge when the focus != current...
+
+  - [ ] TODO: fix tests in dot-graph crate... (post-rename)
+
+  - [ ] titlebar: show number/percent selected (bottom left?)

@@ -174,6 +174,17 @@ impl fmt::Display for SelectionInfo {
     }
 }
 
+impl SelectionInfo {
+    pub fn abbreviated(&self) -> String {
+        let selection_depth = self.depth();
+        if selection_depth < 5 {
+            format!("select({})", self)
+        } else {
+            format!("select(/*{selection_depth} element operator chain*/)")
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 impl SelectionInfo {

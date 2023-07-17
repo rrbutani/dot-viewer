@@ -1,4 +1,7 @@
-use std::collections::HashSet;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 use crate::viewer::{
     error::{DotViewerError, DotViewerResult},
@@ -11,6 +14,8 @@ use graphviz_rs::prelude::*;
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use rayon::prelude::*;
 use regex::Regex;
+
+use super::command::RemoveCfg;
 
 type Matcher = fn(&str, &str, &Graph) -> Option<Vec<usize>>;
 
@@ -58,24 +63,6 @@ pub(crate) enum Focus {
     Next,
 }
 
-/// When removing a node (`root`) and its children, lets you pick between:
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum RemoveSubgraphCfg {
-    /// Removing all the edges to children of `root`, even those from nodes not
-    /// accessible from `root`.
-    ///
-    /// This guarantees that the children of `root` will be removed from the
-    /// graph.
-    AllEdgesToChildren,
-    /// Removing only the edges contained within the transitive closure of
-    /// `root`.
-    ///
-    /// If there are edges to any children of `root` outside this closure, those
-    /// edges (as well as the children they lead to) will be retained.
-    #[default]
-    LeavesOnly,
-}
-
 impl View {
     /// Constructs a new `View`, given a `title` and a `graph`, which is a portion of the original
     /// graph.
@@ -93,7 +80,7 @@ impl View {
         let pattern = String::new();
         let matches = List::from_iter(Vec::new());
 
-        let selection = HashSet::with_capacity(graph.nodes().len());
+        let selection = HashSet::with_capacity(graph.nodes_len());
         let selection_info = SelectionInfo::default();
 
         let subtree = Tree::from_graph(&graph);
@@ -124,6 +111,9 @@ impl View {
 
         // The indexes only make sense in the context of a View; since the view
         // has changed we need to recompute the indexes:
+        //
+        // Note that we handle nodes in the selection potentially *not* being in
+        // the new graph.
         let selected_node_indexes = self
             .selection
             .par_iter()
@@ -135,6 +125,47 @@ impl View {
         new.selection_info = self.selection_info.clone();
 
         Ok(new)
+    }
+
+    fn copy_search_state(&self, to: &mut Self) -> DotViewerResult<()> {
+        if self.current.items != to.current.items {
+            return Err(DotViewerError::ViewerError(
+                "attempted to propagate search state onto a view with a different node list"
+                    .to_string(),
+            ));
+        }
+
+        to.matches = self.matches.clone();
+        to.pattern = self.pattern.clone();
+
+        Ok(())
+    }
+
+    fn copy_focus(&self, to: &mut Self) -> DotViewerResult<()> {
+
+            //        // try to find a new focus point by walking backwards from the old
+            // // one (by index -- i.e. position in the old topo-sorted list) until
+            // // we hit a node that exists
+            // if let Some(old_selected_idx) = self.current.state.selected() {
+            //     for old_idx_pos in (0..=old_selected_idx).rev() {
+            //         let node_id = &self.current.items[old_idx_pos];
+            //         if view.graph.nodes().contains(node_id) && view.goto(node_id).is_ok() {
+            //             break;
+            //         }
+            //     }
+            // }
+
+        if let Some(focused) = self.current.selected() {
+            if to.graph.nodes().contains(&focused) {
+                to.goto(&focused)
+            } else {
+                Err(DotViewerError::ViewerError(format!(
+                    "could not copy focus to tab -- destination tab lacks the node that's currently focused (`{focused}`)"
+                )))
+            }
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -232,28 +263,134 @@ impl View {
 }
 
 impl View {
+    pub(crate) fn selection_as_node_ids(&self) -> impl Iterator<Item = &NodeId> {
+        self.selection.iter().map(|&id| &self.current.items[id])
+    }
+
+    pub(crate) fn selection_as_node_ids_par(&self) -> impl ParallelIterator<Item = &NodeId> {
+        self.selection.par_iter().map(|&id| &self.current.items[id])
+    }
+}
+
+impl View {
+    /// Removes the given nodes from the graph.
+    ///
+    /// On error potentially returns a new node to focus on.
+    pub fn remove<'n>(
+        &self,
+        node_ids_to_remove: impl IntoIterator<Item = &'n NodeId>,
+        cfg: RemoveCfg,
+        removal_source: Option<impl Display>,
+    ) -> Result<View, (DotViewerError, Option<NodeId>)> {
+        let node_ids_to_remove: HashSet<_> = node_ids_to_remove.into_iter().collect();
+        let remove_count = node_ids_to_remove.len();
+
+        // Check that we're not removing the entire graph (not allowed):
+        if remove_count == self.graph.nodes().len() {
+            return Err((
+                DotViewerError::CommandError(format!(
+                    "cannot remove all ({}) nodes from graph",
+                    remove_count
+                )),
+                None,
+            ));
+        }
+
+        let mut out_graph = self.graph.clone();
+
+        // Remove the edges we've been told to remove:
+        let edges = {
+            let mk_edge_id = |(from, to)| EdgeId { from, tailport: None, to, headport: None };
+            let froms = node_ids_to_remove.par_iter().flat_map(|&n| {
+                self.graph.froms(n).unwrap().into_par_iter().map(|from| (from.clone(), n.clone()))
+            });
+            let tos = node_ids_to_remove.par_iter().flat_map(|&n| {
+                self.graph.tos(n).unwrap().into_par_iter().map(|to| (n.clone(), to.clone()))
+            });
+
+            use RemoveCfg::*;
+            match cfg {
+                AllEdges => froms.chain(tos).map(mk_edge_id).collect(),
+                EdgesFrom => froms.map(mk_edge_id).collect(),
+                EdgesTo => tos.map(mk_edge_id).collect(),
+                NoEdges => vec![],
+            }
+        };
+        out_graph.remove_edges(&edges).expect("edge removal should succeed");
+
+        // Now attempt to remove the nodes.
+        //
+        // If any edges to/from the nodes are still there this will fail.
+        if let Err(e) = out_graph.remove_nodes(node_ids_to_remove) {
+            match e {
+                DotGraphError::NodeStillHasEdges { ref other_node, .. } => {
+                    return Err((
+                        DotViewerError::CommandError(format!(
+                            "cannot remove {len} nodes due to remaining edges: {e}",
+                            len = remove_count,
+                        )),
+                        Some(other_node.clone()),
+                    ))
+                }
+                err => unreachable!("unexpected error during node removal: {err}"),
+            }
+        }
+
+        // If that succeeded all that's left to do is construct the new View:
+        let new_view = {
+            // TODO: to we want to optimze for the in-place case separately?
+            // we do duplicate a lot of stuff that's shared..
+            //
+            // Maybe we should use `Cow` for some stuff.
+
+            let removal_source = removal_source.map(|s| s.to_string());
+            let mut view = self
+                .new_with_selection(
+                    format!(
+                        "{} - remove({} {nodes}: {})",
+                        self.title,
+                        remove_count,
+                        removal_source.as_deref().unwrap_or("unknown"),
+                        nodes = if remove_count == 1 { "node" } else { "nodes" },
+                    ),
+                    out_graph,
+                )
+                .expect("impossible to form a cyle by removing nodes and edges");
+
+            // Note: pattern is cleared but I think that's fine.
+
+            // try to find a new focus point by walking backwards from the old
+            // one (by index -- i.e. position in the old topo-sorted list) until
+            // we hit a node that exists
+            if let Some(old_selected_idx) = self.current.state.selected() {
+                for old_idx_pos in (0..=old_selected_idx).rev() {
+                    let node_id = &self.current.items[old_idx_pos];
+                    if view.graph.nodes().contains(node_id) && view.goto(node_id).is_ok() {
+                        break;
+                    }
+                }
+            }
+
+            view
+        };
+
+        Ok(new_view)
+    }
+
     /// Filter down the graph to the current selection.
     ///
     /// Returns `Ok` with a new `View` if the selection is non-empty.
     pub fn filter(&self) -> DotViewerResult<View> {
-        let node_ids =
-            (self.selection.iter()).map(|idx| &self.current.items[*idx]);
+        let node_ids = (self.selection.iter()).map(|idx| &self.current.items[*idx]);
         let graph = self.graph.filter(node_ids);
 
         if graph.is_empty() {
-            return Err(DotViewerError::ViewerError(format!("selection is empty")));
+            return Err(DotViewerError::ViewerError("selection is empty".to_string()));
         }
-
-        let selection_depth = self.selection_info.depth();
-        let selection_name = if selection_depth < 5 {
-            format!("select({})", self.selection_info)
-        } else {
-            format!("select(/*{selection_depth} element operator chain*/)")
-        };
 
         // Don't bother propagating the selection; the new graph *is* the
         // selection.
-        Self::new(format!("{} | {selection_name}", self.title), graph)
+        Self::new(format!("{} | {}", self.title, self.selection_info.abbreviated()), graph)
     }
 
     /// Extract a subgraph from the view.
@@ -288,6 +425,154 @@ impl View {
 
     // TODO: factor into common function..
     // TODO: redo labels above and below
+
+    pub fn make_stub(&self, new_node_name: &NodeId) -> DotViewerResult<View> {
+        let mut graph = self.graph.clone();
+        let nodes_to_remove: HashSet<_> = self.selection_as_node_ids_par().collect();
+
+        /* TODO: spin off into helper, in graph crate? */
+        let froms = nodes_to_remove.par_iter().flat_map(|&n| {
+            self.graph.froms(n).unwrap().into_par_iter().map(|from| (from.clone(), n.clone()))
+        });
+        let tos = nodes_to_remove.par_iter().flat_map(|&n| {
+            self.graph.tos(n).unwrap().into_par_iter().map(|to| (n.clone(), to.clone()))
+        });
+
+        /* TODO: have a helper that lets us remove edges by `(src, dest)` nodeId tuples  */
+
+        // Remove all the edges:
+        let mk_edge_id =
+            |(from, to): (String, String)| EdgeId { from, tailport: None, to, headport: None };
+        let edge_ids: Vec<_> = froms.clone().chain(tos.clone()).map(mk_edge_id).collect();
+        let removed_edges = graph.remove_edges(&edge_ids).expect("edge removal should succeed");
+
+        // Remove all the nodes:
+        let removed_nodes = graph.remove_nodes(nodes_to_remove.iter().cloned())?;
+        eprintln!("removed {} nodes, {} edges", removed_nodes.len(), removed_edges.len());
+
+        // Construct the new node:
+        //
+        // We'll place the node in the highest common subgraph between the
+        // removed nodes;
+        let subgraph_id = {
+            let mut potential_subgraphs: HashSet<_> = removed_nodes.values().collect();
+            // Unfortunately we don't have `subgraph -> parent subgraph`
+            // mappings; only `subgraph -> child(ren) subgraph(s)`.
+            //
+            // For now we just construct the subgraph to parent map on demand:
+            // TODO: extract?
+
+            // TODO: finish
+            None
+        };
+        let label = format!(
+            "Stub of:{}",
+            removed_nodes.keys().map(|n| n.id().clone()).collect::<Vec<_>>().join("\n  -")
+        );
+        let node = Node::new(
+            new_node_name.clone(),
+            HashSet::from([
+                Attr::new("peripheries".to_string(), "2".to_string(), false),
+                Attr::new("label".to_string(), label, false),
+                // TODO: use name as label
+                // TODO: put stub in tooltip?
+                // TODO: shape, fill, style
+            ]),
+        );
+        graph.add_node(node, subgraph_id)?;
+
+        // We want to restore edges that aren't within the graph formed by the
+        // nodes being removed; i.e. edges that have a source or dest node that
+        // isn't in the set of nodes we're removing.
+        #[rustfmt::skip] #[derive(Clone, Hash, PartialEq, Eq)] enum Edge<T> { To(T), From(T) }
+        #[rustfmt::skip] impl<T> Edge<T> { fn inner(self) -> T { match self { Edge::From(x) => x, Edge::To(x) => x }} }
+
+        let edges_to_restore = tos
+            .map(Edge::To)
+            .chain(froms.map(Edge::From))
+            .filter(|e| {
+                let (foreign, within_selection) = match e {
+                    Edge::From((foreign_source, dest)) => (foreign_source, dest),
+                    Edge::To((source, foreign_dest)) => (foreign_dest, source),
+                };
+
+                debug_assert!(nodes_to_remove.contains(within_selection));
+                // skip if the "other" node was also within the selection
+                !nodes_to_remove.contains(dbg!(foreign))
+            })
+            .map(|e| {
+                let orig_edge_id = mk_edge_id(e.clone().inner());
+                let (mut edge_id, attrs) =
+                    self.graph.edges().get(&orig_edge_id).cloned().unwrap().into_parts();
+
+                let original_containing_subgraph_id = removed_edges.get(&orig_edge_id).unwrap();
+
+                // TODO: handle the other tailport/headport in edge_id?
+                if edge_id.headport.is_some() || edge_id.tailport.is_some() {
+                    unimplemented!(
+                        "don't know how to handle tailport/headport when rewriting edges.."
+                    );
+                }
+
+                match e {
+                    // replace the source with our new node
+                    Edge::From(_) => edge_id.to = new_node_name.clone(),
+                    // replace the dest with our new node
+                    Edge::To(_) => edge_id.from = new_node_name.clone(),
+                }
+
+                let edge = graphviz_rs::edge::Edge::new(edge_id, attrs);
+                let subgraph_id = original_containing_subgraph_id.clone();
+
+                (edge, subgraph_id)
+            })
+            .collect::<HashMap<_, _>>();
+        // allocating in ^ isn't ideal but it allows to leverage rayon for
+        // part of the pipeline
+        //
+        // also buys us dedupe
+
+        for (edge, subgraph_id) in edges_to_restore {
+            eprintln!("inserting new edge: {:?}", edge.id());
+            graph.add_edge(edge, Some(subgraph_id))?;
+        }
+
+        // Finally: construct the new View!
+        //
+        // Note: our make-stub operation *can* form cycles!
+        //
+        // Note: we don't bother propagating the selection since... if the
+        // operation succeeded, the new view will not have any of the selected
+        // nodes anymore!
+        let mut view = Self::new(
+            format!(
+                "{} - mkStub({} = {})",
+                self.title,
+                new_node_name,
+                self.selection_info.abbreviated()
+            ),
+            graph,
+        )?;
+
+        let _fix = self.copy_focus(&mut view); // TODO(fix!): do the index search backwards thing instead?
+        // can't copy search; node list is difference
+
+        Ok(view)
+    }
+
+    pub fn make_new_subgraph(&self, new_subgraph_name: &GraphId) -> DotViewerResult<View> {
+        let mut graph = self.graph.clone();
+        graph.add_subgraph(new_subgraph_name, self.selection_as_node_ids_par())?;
+
+        let mut view = self
+            .new_with_selection(format!("{} - +subgraph({new_subgraph_name})", self.title), graph)
+            .expect("making a new subgraph out of existing nodes and edges cannot create cycles");
+
+        self.copy_focus(&mut view)?;
+        self.copy_search_state(&mut view)?;
+
+        Ok(view)
+    }
 
     // more like ancestors..
     pub fn parents(&self, depth: Option<usize>) -> DotViewerResult<View> {
