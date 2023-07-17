@@ -14,8 +14,6 @@ pub(crate) enum Command {
     // TODO: rename? -- nah, keep in App
     // TODO: duplicate -- nah, keep in App
 
-    // TODO: remove: removes selection nodes
-    // TODO: MakeStub
     MakeStub(MakeStub),
     MakeSubgraph(MakeSubgraph),
 

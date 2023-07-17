@@ -150,6 +150,9 @@ Key | Actions
 
 ----
 
+- NOTE: you can use this with the [vscode graphviz live preview extension](https://marketplace.visualstudio.com/items?itemName=tintinweb.graphviz-interactive-preview) as well (instead of xdot); it too watches files for updates
+  + it is considerably slower though
+
 # TODO
 
   - [ ] selection:
@@ -181,20 +184,20 @@ Key | Actions
   - [ ] misc: make the trie thing allow hitting enter and selecting the command with the prefix if there's only one
 
   - Commands:
-    + [ ] `filter(!)`: filter down to selection (aka narrow)
+    + [x] `filter(!)`: filter down to selection (aka narrow)
       * breaks the existing workflow; narrowing down to search results will now require: `[ <search> <`s` search> <:filter> ]`
-    + [ ] `remove(!)`:
+    + [x] `remove(!)`:
       * removes selected nodes, also removes all edges to/from these nodes!
     + [ ] `make-stub(!) <name>`
       * replaces selected nodes with a new single node
-        - node is placed at highest parent subgraph of the selected nodes
+        - [ ] node is placed at highest parent subgraph of the selected nodes
         - edges are rewritten to point to the stub node
-      * stub node should have `peripheries=2`
+      * [x] stub node should have `peripheries=2`
       * inherit attrs? nah
-      * should list the attrs that were folded into it in its label though (newline separated)
+      * [ ] should list the attrs that were folded into it in its label though (newline separated)
       * need to check if this makes the graph cyclic and if so: error
-    + [ ] `make-subgraph(!) [subgraph name]`: turn selection into new subgraph (fallible)
-      * [ ] on parent subgraph error error move cursor to problematic node?
+    + [x] `make-subgraph(!) [subgraph name]`: turn selection into new subgraph (fallible)
+      * [x] on parent subgraph error error move cursor to problematic node?
     + [ ] `duplicate <(opt) new tab name>`
       * makes a new tab that's a copy
     + [ ] `script(!) [script path] <(opt) ... args to script>`
@@ -205,15 +208,16 @@ Key | Actions
         - selection manipulation has its own mechanism
         - there isn't really much else... tab name, etc is easier to modify manually
         - what we're missing is a programmable way to manipulate _tabs_ (i.e. dynamically creating/removing them) but I don't really have a use case for this
-    + [ ] can keep: neighbors, children, parents
+    + [x] can keep: neighbors, children, parents
       * why not? essentially just shorthand for: ``[ <`s` `neighbors <>`> <:filter> ]`` but produces better names for the tabs
         - [ ] unless we wanna record the operations we do in the current selection name... hmmm. (TODO)
-    + [ ] rename, close, export, xdot
+    + [ ] rename
+    + [x] close, export, xdot
 
-  - [ ] misc: should have a "toggle" (t) to select/unselect current node (cursor)
+  - [x] misc: should have a "toggle" (t) to select/unselect current node (cursor)
     + actually let's have `enter` do this
 
-  - [ ] selection: should show the current selection on the exported graph
+  - [x] selection: should show the current selection on the exported graph
     + styling, not clustering... just set background I guess?
 
   - rhai:
@@ -224,12 +228,13 @@ Key | Actions
     + [ ] make R "search in within selection"
     + [ ] make ? "fuzzy search in within selection"
 
-  - [ ] misc: `:?` for help
-  - [ ] misc: `q` for quit (in addition to `:q`)
-  - [ ] misc: `e` for export (in addition to `:export`)
+  - [x] misc: `:?` for help
+  - [x] misc: `q` for quit (in addition to `:q`)
+  - [x] misc: `e` for export (in addition to `:export`)
 
   - [ ] misc(export): write out the file and _then_ swap it into place so that xdot doesn't freak out as much
 
+  - [x] have `d`/`D` remove/force remove focused node (when focused on the current list)
   - [ ] TODO: have `d` remove edge when the focus != current...
 
   - [ ] TODO: fix tests in dot-graph crate... (post-rename)
