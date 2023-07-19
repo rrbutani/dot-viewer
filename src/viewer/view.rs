@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
+    iter,
 };
 
 use crate::viewer::{
@@ -12,6 +13,7 @@ use crate::viewer::{
 use graphviz_rs::prelude::*;
 
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
+use log::info;
 use rayon::prelude::*;
 use regex::Regex;
 
@@ -141,31 +143,30 @@ impl View {
         Ok(())
     }
 
-    fn copy_focus(&self, to: &mut Self) -> DotViewerResult<()> {
-
-            //        // try to find a new focus point by walking backwards from the old
-            // // one (by index -- i.e. position in the old topo-sorted list) until
-            // // we hit a node that exists
-            // if let Some(old_selected_idx) = self.current.state.selected() {
-            //     for old_idx_pos in (0..=old_selected_idx).rev() {
-            //         let node_id = &self.current.items[old_idx_pos];
-            //         if view.graph.nodes().contains(node_id) && view.goto(node_id).is_ok() {
-            //             break;
-            //         }
-            //     }
-            // }
-
-        if let Some(focused) = self.current.selected() {
-            if to.graph.nodes().contains(&focused) {
-                to.goto(&focused)
-            } else {
-                Err(DotViewerError::ViewerError(format!(
-                    "could not copy focus to tab -- destination tab lacks the node that's currently focused (`{focused}`)"
-                )))
+    /// If `allow_inexact` is true, will walk backwards from the selected index
+    /// in `self` until we reach a node that exists in `to` and will use that as
+    /// the focus.
+    fn copy_focus(&self, to: &mut Self, allow_inexact: bool) -> DotViewerResult<()> {
+        // try to find a new focus point by walking backwards from the old one
+        // (by index -- i.e. position in the old topo-sorted list) until we hit
+        // a node that exists
+        if let Some(old_selected_idx) = self.current.state.selected() {
+            for old_idx_pos in (0..=old_selected_idx).rev() {
+                let node_id = &self.current.items[old_idx_pos];
+                if to.graph.nodes().contains(node_id) {
+                    return to.goto(node_id);
+                } else if !allow_inexact {
+                    // If !allow_inexact we'll fall into this branch on the
+                    // first non-existent node; i.e. we'll always report an
+                    // error complaining about the exact focus point of `self`.
+                    return Err(DotViewerError::ViewerError(format!(
+                        "could not copy focus to tab -- destination tab lacks the node that's currently focused (`{node_id}`)"
+                    )));
+                }
             }
-        } else {
-            Ok(())
         }
+
+        Ok(())
     }
 }
 
@@ -358,18 +359,7 @@ impl View {
                 .expect("impossible to form a cyle by removing nodes and edges");
 
             // Note: pattern is cleared but I think that's fine.
-
-            // try to find a new focus point by walking backwards from the old
-            // one (by index -- i.e. position in the old topo-sorted list) until
-            // we hit a node that exists
-            if let Some(old_selected_idx) = self.current.state.selected() {
-                for old_idx_pos in (0..=old_selected_idx).rev() {
-                    let node_id = &self.current.items[old_idx_pos];
-                    if view.graph.nodes().contains(node_id) && view.goto(node_id).is_ok() {
-                        break;
-                    }
-                }
-            }
+            self.copy_focus(&mut view, true).unwrap(); // nodes have been removed, allow inexact
 
             view
         };
@@ -411,18 +401,6 @@ impl View {
         self.new_with_selection(format!("{title} - {key}"), subgraph)
     }
 
-    // /// Removes the subgraph rooted at the selected id in the view, yielding a
-    // /// new view.
-    // pub fn remove_subgraph(&self, cfg: RemoveSubgraphCfg) -> DotViewerResult<View> {
-
-    //     // TODO: should we actually modify in place and have the caller clone
-    //     // when we want to produce a copy? is that more efficient?
-    //     Ok(todo!())
-    // }
-
-    // TODO: extract_into_subgraph
-    // might be hard..
-
     // TODO: factor into common function..
     // TODO: redo labels above and below
 
@@ -431,6 +409,7 @@ impl View {
         let nodes_to_remove: HashSet<_> = self.selection_as_node_ids_par().collect();
 
         /* TODO: spin off into helper, in graph crate? */
+        /* TODO: make available as a graph transformation to rhai */
         let froms = nodes_to_remove.par_iter().flat_map(|&n| {
             self.graph.froms(n).unwrap().into_par_iter().map(|from| (from.clone(), n.clone()))
         });
@@ -448,26 +427,130 @@ impl View {
 
         // Remove all the nodes:
         let removed_nodes = graph.remove_nodes(nodes_to_remove.iter().cloned())?;
-        eprintln!("removed {} nodes, {} edges", removed_nodes.len(), removed_edges.len());
+        info!("removed {} nodes, {} edges", removed_nodes.len(), removed_edges.len());
 
         // Construct the new node:
         //
         // We'll place the node in the highest common subgraph between the
         // removed nodes;
         let subgraph_id = {
-            let mut potential_subgraphs: HashSet<_> = removed_nodes.values().collect();
+            let root_subgraph = self.graph.id();
+
             // Unfortunately we don't have `subgraph -> parent subgraph`
             // mappings; only `subgraph -> child(ren) subgraph(s)`.
             //
             // For now we just construct the subgraph to parent map on demand:
-            // TODO: extract?
+            // TODO: spin off? move to graph crate?
+            let subgraph_to_parent_map = {
+                let mut map = HashMap::with_capacity(self.graph.subgraphs_len());
 
-            // TODO: finish
-            None
+                // going to make `root` is it's own parent, for simplicity:
+                map.insert(root_subgraph, root_subgraph);
+
+                // Relying on the fact that subgraphs only have one parent..
+                fn visit_subgraphs<'g>(
+                    graph: &'g Graph,
+                    parent_subgraph: &'g NodeId,
+                    map: &'_ mut HashMap<&'g NodeId, &'g NodeId>,
+                ) {
+                    for child_subgraph in
+                        graph.search_subgraph(parent_subgraph).unwrap().subgraphs()
+                    {
+                        map.insert(child_subgraph, parent_subgraph);
+                        visit_subgraphs(graph, child_subgraph, map) // DFS
+                    }
+                }
+
+                // Start at the root:
+                visit_subgraphs(&self.graph, root_subgraph, &mut map);
+
+                map
+            };
+
+            // yields elements "backwards"; `subgraph` first, `root_subgraph`
+            // last
+            fn find_path_to_root_subgraph<'g: 'h, 'h>(
+                subgraph: &'g NodeId,
+                to_parent_map: &'h HashMap<&'g NodeId, &'g NodeId>,
+            ) -> impl Iterator<Item = &'g NodeId> + 'h {
+                let mut subgraph = Some(subgraph);
+                iter::from_fn(move || {
+                    if let Some(curr) = subgraph {
+                        let next = to_parent_map[curr];
+                        subgraph = if next == curr { None } else { Some(next) };
+
+                        Some(curr)
+                    } else {
+                        None
+                    }
+                })
+            }
+
+            let mut it = removed_nodes.values(); // enclosing subgraphs of the removed nodes
+            let mut current_longest_common_subgraph_path = it
+                .next()
+                .map(|sub| {
+                    let mut path: Vec<_> =
+                        find_path_to_root_subgraph(sub, &subgraph_to_parent_map).collect();
+                    path.reverse();
+                    path
+                })
+                .unwrap_or(vec![root_subgraph]);
+            let mut subgraphs_in_current_path: HashSet<&NodeId> =
+                current_longest_common_subgraph_path.iter().cloned().collect();
+
+            for subgraph in it {
+                // Possibilities:
+                //  - this subgraph is a (potentially transitive) subgraph of
+                //    `current`, meaning nothing changes
+                //    + i.e. the current path is a _prefix_ of this subgraph's
+                //      path
+                //  - this subgraph's path diverges from the current subgraph's
+                //    path; our path shortens to the common prefix of the paths
+                let last_common_path_elem = 'common: {
+                    for subgraph_path_elem in
+                        find_path_to_root_subgraph(subgraph, &subgraph_to_parent_map)
+                    {
+                        if subgraphs_in_current_path.contains(subgraph_path_elem) {
+                            // We've reached something in common!
+                            break 'common subgraph_path_elem;
+                        } else {
+                            // Anything this path has that our current path does
+                            // not is, by definition, not in the common prefix:
+                            continue;
+                        }
+                    }
+
+                    unreachable!(
+                        "subgraph `{subgraph}` had no common parent subgraphs
+                        with subgraph `{}` (path: `{:?}`) but that's not
+                        supposed to be possible...",
+                        current_longest_common_subgraph_path.last().unwrap(),
+                        current_longest_common_subgraph_path,
+                    );
+                };
+
+                // Now we must discard elements from our path until we've pared
+                // it down to the last common path element:
+                loop {
+                    if *current_longest_common_subgraph_path
+                        .last()
+                        .expect("common prefix with length > 0")
+                        == last_common_path_elem
+                    {
+                        break;
+                    } else {
+                        let last = current_longest_common_subgraph_path.pop().unwrap();
+                        assert!(subgraphs_in_current_path.remove(last));
+                    }
+                }
+            }
+
+            current_longest_common_subgraph_path.last().map(|&s| s.clone()).unwrap()
         };
         let label = format!(
             "Stub of:{}",
-            removed_nodes.keys().map(|n| n.id().clone()).collect::<Vec<_>>().join("\n  -")
+            removed_nodes.keys().map(|n| n.id().clone()).collect::<Vec<_>>().join("\n  -") // TODO: use labels if present instead of `NodeId`
         );
         let node = Node::new(
             new_node_name.clone(),
@@ -475,11 +558,11 @@ impl View {
                 Attr::new("peripheries".to_string(), "2".to_string(), false),
                 Attr::new("label".to_string(), label, false),
                 // TODO: use name as label
-                // TODO: put stub in tooltip?
+                // TODO: put stub info in tooltip?
                 // TODO: shape, fill, style
             ]),
         );
-        graph.add_node(node, subgraph_id)?;
+        graph.add_node(node, Some(subgraph_id))?;
 
         // We want to restore edges that aren't within the graph formed by the
         // nodes being removed; i.e. edges that have a source or dest node that
@@ -498,7 +581,7 @@ impl View {
 
                 debug_assert!(nodes_to_remove.contains(within_selection));
                 // skip if the "other" node was also within the selection
-                !nodes_to_remove.contains(dbg!(foreign))
+                !nodes_to_remove.contains(foreign)
             })
             .map(|e| {
                 let orig_edge_id = mk_edge_id(e.clone().inner());
@@ -533,7 +616,7 @@ impl View {
         // also buys us dedupe
 
         for (edge, subgraph_id) in edges_to_restore {
-            eprintln!("inserting new edge: {:?}", edge.id());
+            info!("inserting new edge: {:?}", edge.id());
             graph.add_edge(edge, Some(subgraph_id))?;
         }
 
@@ -554,8 +637,8 @@ impl View {
             graph,
         )?;
 
-        let _fix = self.copy_focus(&mut view); // TODO(fix!): do the index search backwards thing instead?
         // can't copy search; node list is difference
+        self.copy_focus(&mut view, true)?;
 
         Ok(view)
     }
@@ -568,7 +651,7 @@ impl View {
             .new_with_selection(format!("{} - +subgraph({new_subgraph_name})", self.title), graph)
             .expect("making a new subgraph out of existing nodes and edges cannot create cycles");
 
-        self.copy_focus(&mut view)?;
+        self.copy_focus(&mut view, false)?; // not inexact; the same nodes should be present
         self.copy_search_state(&mut view)?;
 
         Ok(view)

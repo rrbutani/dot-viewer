@@ -177,9 +177,10 @@ Key | Actions
         - not sure... this will be tricky
       * [ ] `script [script path] <(opt) ... args to script>`
         - can use `rhai`
-        - interface should be: `fn filter(&Graph, curr_selection: Option<&[&NodeId]>) -> HashSet<&NodeId> {}`
-          + and we'd go apply `intersection`, `_`, `union`, `difference` as appropriate?
-      * eventually can expand into a more general scripting interface, not bound to selections (i.e. signature: `&Graph -> Graph`)
+        - interface should be: `fn filter(&Graph, curr_selection: &[&NodeId]) -> &[NodeId] {}`
+          + where it's overloaded (consuming the second arg should be optional)
+          + and we'd go apply `new`, `intersection`, `union`, `difference`, `symmetric-difference` as appropriate?
+      * eventually can expand into a more general scripting interface, not bound to selections (i.e. signature: `(graph: &Graph, selection: Option<&[&NodeId]>) -> new_graph: Graph`)
 
   - [ ] misc: make the trie thing allow hitting enter and selecting the command with the prefix if there's only one
 
@@ -232,7 +233,7 @@ Key | Actions
   - [x] misc: `q` for quit (in addition to `:q`)
   - [x] misc: `e` for export (in addition to `:export`)
 
-  - [ ] misc(export): write out the file and _then_ swap it into place so that xdot doesn't freak out as much
+  - [ ] misc(export): write out the file and _then_ swap it into place (iff a file already exists at the given path) so that xdot doesn't freak out as much
 
   - [x] have `d`/`D` remove/force remove focused node (when focused on the current list)
   - [ ] TODO: have `d` remove edge when the focus != current...
@@ -240,3 +241,22 @@ Key | Actions
   - [ ] TODO: fix tests in dot-graph crate... (post-rename)
 
   - [ ] titlebar: show number/percent selected (bottom left?)
+
+  - [ ] TODO: keybinds for prev/next in selection (`[`, `]`)
+  - [ ] TODO: tab name abbrev in middle (i.e. `...`, based on window width?)
+
+  - [ ] TODO: label clusters!
+
+  - [ ] TODO(future): register aliases
+    + this'd make it easy to run scripts; it'd look like a built-in command..
+      * though we'd maybe want a `load` distinction; don't want to be re-reading the .rhai file and reparsing/optimizing the AST every time, probably..
+
+  - test `mk-stub`:
+    + [x] cycle
+    + [x] 1 node
+    + [x] no nodes
+    + [x] multiple nodes
+    + [x] edge rewriting
+    + [x] that common subgraph placement works!
+
+  - [ ] have `e` just export `current.dot`
