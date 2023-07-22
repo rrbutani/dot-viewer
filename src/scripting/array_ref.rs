@@ -61,8 +61,275 @@ impl<T: Clone> Package for ArrayRefPackage<T> {
 }
 */
 
-  #[derive(Debug, Clone)]
-  pub struct ArrayRef<'a, T = ()>(&'a [T], Option<Witness>);
+// TODO: maybe we should have a `Ref` type...
+
+mod inner {
+    use std::ops::Deref;
+
+    use super::{MakeCheckedReference, MkArrayRef, Witness};
+
+    #[derive(Debug, Clone)]
+    pub struct ArrayRef<'a, T = ()>(&'a [T], Option<Witness>);
+
+    // TODO: PartialEq, Eq, Hash
+
+    impl<'a, T: PartialEq> PartialEq for ArrayRef<'a, T> {
+        fn eq(&self, other: &Self) -> bool {
+            self.0 == other.0
+        }
+    }
+
+    impl<'a, T> ArrayRef<'a, T> {
+        pub fn mk_derived(&mut self, func: impl FnOnce(&mut Self) -> &'a [T]) -> Self {
+            Self(func(self), self.1.clone())
+        }
+
+        pub fn get<'b>(&'b self) -> &'b [T] {
+            &*self.0
+        }
+
+        pub fn set(&mut self, r: &'a [T]) {
+            self.0 = r;
+        }
+
+        // safety: must not allow this to go anywhere where it's not guarded by
+        // a witness
+        pub unsafe fn get_unchecked_reference(&self) -> &'a [T] {
+            self.0
+        }
+    }
+
+    impl<T> ArrayRef<'static, T> {
+        pub fn get_static(&self) -> &'static [T] {
+            self.0
+        }
+    }
+
+    unsafe impl MakeCheckedReference for MkArrayRef {
+        type Bare<'r, T: 'r> = &'r [T];
+        type Ref<'r, T: 'r> = ArrayRef<'r, T>;
+
+        fn new<'r, T: 'r>(reference: &'r [T], witness: Witness) -> Self::Ref<'r, T> {
+            ArrayRef(reference, Some(witness))
+        }
+    }
+
+    // not unsafe to construct but not particularly useful...
+    // impl<'a, T> From<&'a [T]> for ArrayRef<'a, T> {
+    //     fn from(value: &'a [T]) -> Self {
+    //         ArrayRef(value, None)
+    //     }
+    // }
+
+    impl<T> From<&'static [T]> for ArrayRef<'static, T> {
+        fn from(value: &'static [T]) -> Self {
+            ArrayRef(value, None)
+        }
+    }
+
+    impl<const N: usize, T> From<&'static [T; N]> for ArrayRef<'static, T> {
+        fn from(value: &'static [T; N]) -> Self {
+            ArrayRef(value, None)
+        }
+    }
+
+    impl<T> Deref for ArrayRef<'_, T> {
+        type Target = [T];
+
+        fn deref(&self) -> &Self::Target {
+            self.0
+        }
+    }
+}
+
+pub use inner::ArrayRef;
+
+// TODO: move into `inner` module
+//  - do not make the fields public; it should be impossible to get a bare
+//    reference out of `ArrayRef` that's not bounded by a borrow of it
+//  - have a constructor that only accepts &'static
+//  - for shorter lifetimes you need the token
+//  - have a `make_derived` function that propagates the runtime tracked
+//    lifetime
+//  - impl `PartialEq`, `Eq`, `Hash` by hand to skip this field
+
+//  - ReferenceManager – closure based API like `thread::scope()`
+//    + this is what gives you tokens
+
+// fn make_checked_reference<'scope, T, R: MakeCheckedReference>(name: ..., ref: &'scope T) -> R::Ref<'static, T>
+
+/// 'env: surrounding lifetime that we can borrow from
+/// 'scope: lifetime of the scope
+pub struct ReferenceManager<'scope, 'env: 'scope> {
+    // to keep `'scope` from shrinking; see `std::thread::Scope`
+    scope: PhantomData<&'scope mut &'scope ()>,
+    env: PhantomData<&'env mut &'env ()>,
+
+    table: Mutex<Vec<(Witness, Option<String>)>>,
+}
+
+// TODO: do we actually need `'env`?
+// I think it's just there for lifetime variance reasons, maybe?
+//  - nah, it's associated with the function I think
+
+impl ReferenceManager<'static, 'static> {
+    pub fn scope<'env, R>(
+        func: impl for<'scope> FnOnce(&'scope ReferenceManager<'scope, 'env>) -> R,
+    ) -> R {
+        let refm = ReferenceManager {
+            scope: PhantomData,
+            env: PhantomData,
+            table: Mutex::new(Vec::new()),
+        };
+
+        // TODO: panic safety?
+
+        let ret = func(&refm);
+
+        let table = refm.table.lock().unwrap();
+        for (witness, name) in table.iter() {
+            let strong_count = Arc::strong_count(&witness.0);
+            if strong_count > 1 {
+                panic!("Error: {} still has {} live reference(s) at the end of the reference manager's scope!", name.as_deref().unwrap_or("an allocation"), strong_count - 1);
+            }
+        }
+
+        ret
+    }
+}
+
+impl<'s, 'e> ReferenceManager<'s, 'e> {
+    pub fn make_checked_reference<'r: 'e, T, R: MakeCheckedReference>(
+        &'s self,
+        reference: R::Bare<'r, T>,
+        name: Option<impl ToString>,
+    ) -> R::Ref<'static, T> {
+        let witness = Witness(Arc::new(()));
+        let mut table = self.table.lock().unwrap();
+        table.push((witness.clone(), name.map(|x| x.to_string())));
+
+        let reference = R::new(reference, witness);
+
+        // ...
+        // this may very well be unsafe in the presence of invariant lifetimes?
+        //
+        // not sure
+        unsafe { mem::transmute(reference) }
+    }
+}
+
+// pub struct MkArrayRef;
+pub type MkArrayRef = ArrayRef<'static, ()>;
+
+#[derive(Debug, Clone)]
+pub struct Witness(Arc<()>);
+
+// safety property is that you must store the witness somewhere..
+//
+// and must not allow users to get the bare inner reference
+pub unsafe trait MakeCheckedReference {
+    type Bare<'r, T: 'r>;
+    type Ref<'r, T: 'r>: 'r;
+
+    fn new<'r, T>(reference: Self::Bare<'r, T>, witness: Witness) -> Self::Ref<'r, T>;
+}
+
+// impl<'a, T: Clone> IntoIterator for ArrayRef<'a, T> {
+//     type Item = T;
+//     type IntoIter = std::iter::Cloned<std::slice::Iter<'a, T>>;
+//
+//     fn into_iter(self) -> Self::IntoIter {
+//         self.0.iter().cloned()
+//     }
+// }
+
+// TODO: what to do about lifetimes..
+//  - lets do a "watched lifetime" kind of thing
+//    + you set up an outer scope that bounds the lifetime
+//    + you hand that scope a closure, we'll give you a token with the lifetime
+//      in it
+//    + you can use the token to turn things with that lifetime into 'static
+//      references
+//    + we'll keep track of what references are still alive via a refcount
+//    + when the scope exits if there are any extant references we'll panic
+
+// TODO: okay yeah, need a `Ref` wrapper type..
+/*
+impl<'a, T> IntoIterator for ArrayRef<'a, T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+*/
+
+
+#[test]
+#[should_panic = "array still has 1 live reference"]
+fn test_reference_guard_simple() {
+    let array = [1, 2, 3, 4, 5];
+    let mut yo = None;
+
+    ReferenceManager::scope(|r| {
+        let array_ref: ArrayRef<'static, _> = r.make_checked_reference::<'_, _, MkArrayRef>(&array, Some("array"));
+
+        yo = Some(array_ref.clone());
+    });
+}
+
+#[test]
+fn test_reference_guard() {
+    let mut scope = rhai::Scope::new();
+    scope.push_dynamic("array", Dynamic::UNIT);
+    scope.push_dynamic("array2", Dynamic::UNIT);
+
+    let mut engine = rhai::Engine::new();
+    engine.build_type::<ArrayRef<'static, INT>>();
+    engine.build_type::<ArrayRef<'static, ()>>();
+
+    let array = [1, 2, 3, 4, 5];
+    let array2 = [(); 40];
+
+    ReferenceManager::scope(|r| {
+        let array_ref: ArrayRef<'static, _> = r.make_checked_reference::<'_, _, MkArrayRef>(&array, Some("array"));
+        let array_ref2: ArrayRef<'static, _> = r.make_checked_reference::<'_, _, MkArrayRef>(&array2, Some("array2"));
+
+        // under real use we'd probably clone the scope or roll it back in a
+        // more rigorous way
+        scope.push("a", array_ref);
+        scope.push("b", array_ref2);
+
+        engine.run_with_scope(&mut scope, "
+            array = a;
+            array2 = b;
+
+            let foo = a;
+            let bar = a;
+            let baz = a;
+        ").unwrap();
+
+        // 5 live references for a
+
+        // scope.remove::<ArrayRef<'static, INT>>("a").unwrap();
+        let _ = scope.remove::<Dynamic>("a").unwrap();
+        let _ = scope.remove::<Dynamic>("array").unwrap();
+        let _ = scope.remove::<Dynamic>("foo").unwrap();
+        let _ = scope.remove::<Dynamic>("bar").unwrap();
+        let _ = scope.remove::<Dynamic>("baz").unwrap();
+
+        let _ = scope.remove::<Dynamic>("b").unwrap();
+        let _ = scope.remove::<Dynamic>("array2").unwrap();
+
+        // TODO: we can actually go hunting through the scope for stuff, programmatically..
+        // types are tricky though
+
+
+        // scope.remove::<ArrayRef<'static, INT>>("foo").unwrap();
+        // scope.remove::<ArrayRef<'static, INT>>("bar").unwrap();
+    });
+}
 
 // A copy of `rhai::eval::target::calc_offset_len` which is, unfortuantely, not
 // public.
