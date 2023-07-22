@@ -15,12 +15,12 @@ edition = "2021"
 # graphviz-rs = "0.1.0"
 graphviz-rs = { git = "https://github.com/rrbutani/dot-graph.git" }
 tui = "0.19.0"
-tui-tree-widget = "0.11.0"
-crossterm = "0.25"
+tui-tree-widget = "0.12.0"
+crossterm = "0.26"
 clap = { version = "4.1.1", features = ["derive"] }
 trie-rs = "0.1.1"
 fuzzy-matcher = "0.3.7"
-html_parser = "0.6.3"
+html_parser = "0.7.0"
 thiserror = "1.0.38"
 regex = "1.7.1"
 rayon = "1.6.1"
@@ -28,6 +28,12 @@ better-panic = "0.3.0"
 log = "0.4.17"
 simplelog = "0.12.0"
 chrono = "0.4.23"
+
+rhai = { version = "1.15", optional = true, features = ["internals"] }
+
+[features]
+default = ["scripting"]
+scripting = ["rhai"]
 
 # [patch.crates-io]
 # graphviz-rs = { version = "0.2.0", path = "../dot-graph" }

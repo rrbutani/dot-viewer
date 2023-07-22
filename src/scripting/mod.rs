@@ -1,4 +1,3 @@
-
 // fn filter(&Graph, curr_selection: &[&NodeId]) -> &[NodeId];
 // fn modify(graph: &Graph, selection: Option<&[&NodeId]>) -> new_graph: Graph;
 
@@ -17,9 +16,7 @@
 // fn filter(Graph, curr_selection: &[&NodeId]) -> &[NodeId];
 // fn modify(graph: Graph, selection: Option<&[&NodeId]>) -> new_graph: Graph;
 
-
 //////////////////////////////////////////////////////////////////////
-
 
 // types:
 //   - EdgeId
@@ -38,21 +35,35 @@
 // for `ArrayRef<T>` we'd need to implement these methods from [this list](https://rhai.rs/book/language/arrays.html#built-in-functions):
 // (i.e. all the methods that don't mutate):
 //  - `get`
+//  - `+`
 //  - `==`
 //  - `!=`
+//  - `pop`
+//  - `shift`
+//  - `extract(start)`
+//  - `extract(start, num_elements)`
+//  - `extract(range)`
 //  - `len` (method and property)
 //  - `is_empty` (method and property)
+//  - `truncate`
+//  - `chop`
 //  - `split`
 //  - `for_each`
 //  - `filter`
 //  - `contains`
 //  - `index_of(elem)`
+//  - `index_of(elem, start_pos)`
 //  - `index_of(fn)`
-//  - `find`
-//  - `find_map`
+//  - `index_of(fn, start_pos)`
+//  - `find(fn)`
+//  - `find(fn, start_pos)`
+//  - `find_map(fn)`
+//  - `find_map(fn, start_pos)`
 //  - `map`
-//  - `reduce`
-//  - `reduce_rev`
+//  - `reduce(fn)`
+//  - `reduce(fn, initial_val)`
+//  - `reduce_rev(fn)`
+//  - `reduce_rev(fn, initial_val)`
 //  - `some`
 //  - `all`
 //
@@ -70,8 +81,8 @@
 //  - `contains`
 //    + may wish to do extras and also support builtin strings and stuff.. (if type is a `String` or `&str` or `Cow<str>` or such)
 //      * might be hard though to do generically..
-//  - `keys` -> ArrayRef<K>
-//  - `values` -> ArrayRef<V>
+//  - `keys` -> ArrayRef<K> // nope, this would be owned..
+//  - `values` -> ArrayRef<V> // nope, this would be owned..
 //  - `to_json`
 //    + actually, nah
 //
@@ -206,7 +217,6 @@
 //
 //   - to_owned -> Graph
 
-
 ///////////////////////////////////////////////////////////////////////
 
 // TODO: persist a scope for loaded commands
@@ -215,3 +225,12 @@
 // TODO: deploy docs on github actions
 // TODO: vscode ext in workspace recs, rhai-doc and rhai-lsp in flake
 // TODO: gitattributes in the repo for .rhai as rust
+// TODO: custom operators
+
+///////////////////////////////////////////////////////////////////////
+
+use rhai::EvalAltResult;
+
+type RhaiResult<T> = Result<T, Box<EvalAltResult>>;
+
+mod array_ref;
