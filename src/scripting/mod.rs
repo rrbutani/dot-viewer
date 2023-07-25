@@ -229,8 +229,10 @@
 
 ///////////////////////////////////////////////////////////////////////
 
-use rhai::EvalAltResult;
+type RhaiResult<T> = Result<T, Box<rhai::EvalAltResult>>;
 
-type RhaiResult<T> = Result<T, Box<EvalAltResult>>;
-
+mod reference_manager;
 mod array_ref;
+
+pub use reference_manager::{Ref, RefMut, ReferenceManager, Owned, Witness};
+pub use array_ref::ArrayRef;
