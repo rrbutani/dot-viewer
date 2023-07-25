@@ -301,18 +301,21 @@ impl View {
         // Remove the edges we've been told to remove:
         let edges = {
             let mk_edge_id = |(from, to)| EdgeId { from, tailport: None, to, headport: None };
-            let froms = node_ids_to_remove.par_iter().flat_map(|&n| {
-                self.graph.froms(n).unwrap().into_par_iter().map(|from| (from.clone(), n.clone()))
+            let edges_froms = node_ids_to_remove.par_iter().flat_map(|&n| {
+                self.graph.tos(n).unwrap().into_par_iter().map(|from| (from.clone(), n.clone()))
             });
-            let tos = node_ids_to_remove.par_iter().flat_map(|&n| {
-                self.graph.tos(n).unwrap().into_par_iter().map(|to| (n.clone(), to.clone()))
+            let edges_tos = node_ids_to_remove.par_iter().flat_map(|&n| {
+                self.graph.froms(n).unwrap().into_par_iter().map(|to| (n.clone(), to.clone()))
             });
+            // Note the flipping of to/from! Our terminology is
+            // current-node-centric; _from_ the current node, _to_ the current
+            // node.
 
-            use RemoveCfg::*;
+            use RemoveConfig::*;
             match cfg {
-                AllEdges => froms.chain(tos).map(mk_edge_id).collect(),
-                EdgesFrom => froms.map(mk_edge_id).collect(),
-                EdgesTo => tos.map(mk_edge_id).collect(),
+                AllEdges => edges_froms.chain(edges_tos).map(mk_edge_id).collect(),
+                EdgesFrom => edges_froms.map(mk_edge_id).collect(),
+                EdgesTo => edges_tos.map(mk_edge_id).collect(),
                 NoEdges => vec![],
             }
         };
