@@ -245,11 +245,18 @@ Key | Actions
   - [ ] TODO: keybinds for prev/next in selection (`[`, `]`)
   - [ ] TODO: tab name abbrev in middle (i.e. `...`, based on window width?)
 
-  - [ ] TODO: label clusters!
+  - [ ] TODO: label clusters! (in mk-subgraph..)
 
-  - [ ] TODO(future): register aliases
+  - TODO(future): register aliases
     + this'd make it easy to run scripts; it'd look like a built-in command..
       * though we'd maybe want a `load` distinction; don't want to be re-reading the .rhai file and reparsing/optimizing the AST every time, probably..
+  - [ ] actually let's maybe just make it "register script" for now
+    + these can live on the app I guess?
+    + or maybe we should make this something scripts can specify (in addition)?
+      * i.e. you export an `EXTRA_SELECTION_COMMANDS`/`EXTRA_ACTION_COMMANDS` map or something; command name to function (also help text?)...
+        - error on collision
+    + tricky, tricky, tricky
+    + note: we'd want to add this to the logs for all current tabs!
 
   - test `mk-stub`:
     + [x] cycle
@@ -260,3 +267,12 @@ Key | Actions
     + [x] that common subgraph placement works!
 
   - [ ] have `e` just export `current.dot`
+  - [ ] record a action log per tab, offer a way to dump it
+
+  - [ ] have a way to dump the input history??
+  - [ ] up/down autocomplete? reverse history search? grrr
+    + could use rustyline or something but I'm not going to bother
+
+
+  - make the interface of the selection thing be allowed to view the current selection as a way to allow for optimizations
+    + doesn't have to use the current selection, doesn't affect correctness (will still `&`/etc with the selection as is appropriate)

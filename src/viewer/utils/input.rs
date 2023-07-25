@@ -4,7 +4,7 @@
 pub(crate) struct Input {
     pub key: String,
     pub cursor: usize,
-    history: Vec<String>,
+    history: Vec<String>, // TODO: have a way to dump the history?? up/down autocomplete?
 }
 
 impl Input {

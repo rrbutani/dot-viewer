@@ -44,7 +44,7 @@ pub(crate) struct App {
     pub action_cmds: ActionCommandTable,
 
     /// Keybinding helps
-    pub help: Table,
+    pub help: Table, // TODO: remove, fix
 }
 
 impl App {

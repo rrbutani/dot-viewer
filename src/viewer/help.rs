@@ -35,3 +35,5 @@ pub(super) const ROWS: &[&[&str]] = &[
     &["Subgraph Popup", "h/j/k/l", "", "traverse tree"],
     &["", "enter", "", "change root to the selected subgraph"],
 ];
+
+// TODO: make ~dynamic
