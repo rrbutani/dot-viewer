@@ -67,7 +67,6 @@ fn draw_help<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App) {
     f.render_stateful_widget(table, chunk, &mut app.help.state);
 }
 
-
 fn draw_selection_stack<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App) {
     let selection_info = &app.tabs.selected().selection_info;
 

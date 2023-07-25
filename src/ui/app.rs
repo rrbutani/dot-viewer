@@ -13,7 +13,7 @@ pub(crate) fn draw_app<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("Dot-Viewer (v0.1.0)")
+        .title(format!("Dot-Viewer (v{})", env!("CARGO_PKG_VERSION")))
         .title_alignment(Alignment::Center)
         .border_type(BorderType::Rounded);
 
@@ -29,7 +29,7 @@ pub(crate) fn draw_app<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 fn draw_main<B: Backend>(f: &mut Frame<B>, size: Rect, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(90), Constraint::Percentage(10)].as_ref())
+        .constraints([Constraint::Percentage(85), Constraint::Percentage(15)].as_ref())
         .split(size);
 
     draw_tabs(f, chunks[0], app);

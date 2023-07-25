@@ -57,6 +57,7 @@ pub enum SelectionOp {
 ///
 /// These all represent a set of nodes.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[warn(clippy::missing_docs_in_private_items)]
 pub enum SelectionKind {
     Search { kind: SearchMode, pattern: String },
     Neighbors { center: NodeId, depth: Option<usize> },
@@ -222,7 +223,7 @@ impl SelectionInfo {
             (this, _, _) => {
                 let inner = mem::take(this);
                 Self::Chain { outer: kind, op, inner: Box::new(inner) }
-            },
+            }
         };
     }
 
@@ -267,7 +268,11 @@ impl SelectionInfo {
 // Note: bail after `N` operations when stringify-ing
 
 /// Commands that modify the current selection.
-pub(crate) enum SelectionCommand {}
+pub struct SelectionCommand {
+    /// `None` = clear previous selection
+    op: Option<SelectionOp>,
+    kind: SelectionKind,
+}
 
 // TODO: we _could_ be smart about eliding operations that didn't change the
 // selection set from the

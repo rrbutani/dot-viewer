@@ -15,8 +15,8 @@ impl FromIterator<String> for Trie {
 
         let mut items = Vec::new();
         for id in iter {
-            items.push(id.clone());
-            builder.push(id);
+            builder.push(&id);
+            items.push(id);
         }
         let trie = builder.build();
 
@@ -25,6 +25,10 @@ impl FromIterator<String> for Trie {
 }
 
 impl Trie {
+    pub fn all(&self) -> &[String] {
+        &self.items
+    }
+
     pub fn autocomplete(&self, key: &str) -> Option<String> {
         let predictions = if key.is_empty() { self.items.clone() } else { self.predict(key) };
 
