@@ -104,10 +104,12 @@
 
 // NOTE: need to support the rhai-typed equivs in args in the above where possible...
 
-// Graph (aka MutGraphWrapper)
+// TODO: do a mem::replace to pass the graph along to the script I guess?
+
+// Graph (aka OwnedGraph)
 //   - new(name: str) -> Graph
-//   - new(name: str, nodes: HashSetRef<Node> | Array | ArrayRef<Node>) -> Graph
-//   - new(name: str, nodes: HashSetRef<Node> | Array | ArrayRef<Node>, edges: HashSetRef<Edge> | Array | ArrayRef<Edge>) -> Graph
+//   - new(name: str, nodes: HashSetRef<Node> | Array | ArrayRef<Node> | Map<_, Node>) -> Graph
+//   - new(name: str, nodes: HashSetRef<Node> | Array | ArrayRef<Node>, edges: HashSetRef<Edge> | Array | ArrayRef<Edge> | Map<_, Edge>) -> Graph
 //   - clone(&mut self) -> Graph
 //
 //
@@ -234,5 +236,11 @@ type RhaiResult<T> = Result<T, Box<rhai::EvalAltResult>>;
 mod reference_manager;
 mod array_ref;
 
+mod graph;
+mod node;
+mod edge;
+
 pub use reference_manager::{Ref, RefMut, ReferenceManager, Owned, Witness};
 pub use array_ref::ArrayRef;
+
+// TODO: offer a module here?

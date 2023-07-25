@@ -165,6 +165,7 @@ mod inner {
     /// longer tracked by a witness!
     ///
     /// so this type is essentially opaque.
+    #[derive(Debug)]
     pub struct Owned<T>(T, Option<Witness>);
 
     // safety: we're making a new witness
@@ -393,37 +394,39 @@ impl<'a, T: ?Sized + DoubleEndedIterator> DoubleEndedIterator for RefMut<'a, T> 
 
 // all unsafe; cannot be sure that references used will not be used to leak
 // inner references
-/*
-impl<T> Deref for Owned<T> {
+//
+// going to lean on our `FullyOwnedType` thing for now but this is not great..
+/**/
+impl<T: FullyOwnedType> Deref for Owned<T> {
     type Target = T;
 
-    fn deref(&self) -> &Self::Target { self.get() }
+    fn deref(&self) -> &Self::Target { unsafe { self.get() } }
 }
 
-impl<T: PartialEq<R>, R> PartialEq<Owned<R>> for Owned<T> {
+impl<T: FullyOwnedType + PartialEq<R>, R: FullyOwnedType> PartialEq<Owned<R>> for Owned<T> {
     fn eq(&self, other: &Owned<R>) -> bool {
-        T::eq(self.get(), other.get())
+        T::eq(unsafe { self.get() }, unsafe { other.get() })
     }
 }
-impl<'a, T: PartialEq<R>, R: ?Sized> PartialEq<Ref<'a, R>> for Owned<T> {
+impl<'a, T: FullyOwnedType + PartialEq<R>, R: FullyOwnedType + ?Sized> PartialEq<Ref<'a, R>> for Owned<T> {
     fn eq(&self, other: &Ref<'a, R>) -> bool {
-        T::eq(self.get(), other.get())
+        T::eq(unsafe { self.get() }, other.get())
     }
 }
-impl<'a, T: PartialEq<R>, R: ?Sized> PartialEq<RefMut<'a, R>> for Owned<T> {
+impl<'a, T: FullyOwnedType + PartialEq<R>, R: FullyOwnedType + ?Sized> PartialEq<RefMut<'a, R>> for Owned<T> {
     fn eq(&self, other: &RefMut<'a, R>) -> bool {
-        T::eq(self.get(), other.get())
+        T::eq(unsafe { self.get() }, other.get())
     }
 }
 
-impl<T: Eq> Eq for Owned<T> { }
+impl<T: FullyOwnedType + Eq> Eq for Owned<T> { }
 
-impl<T: Hash> Hash for Owned<T> {
+impl<T: FullyOwnedType + Hash> Hash for Owned<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        T::hash(self.get(), state)
+        T::hash(unsafe { self.get() }, state)
     }
 }
-*/
+/**/
 
 impl<T> From<T> for Owned<T> {
     fn from(value: T) -> Self {

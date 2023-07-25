@@ -1,17 +1,13 @@
 use std::{
     any,
-    collections::HashMap,
-    marker::PhantomData,
-    mem,
-    ops::{Deref, Range, RangeInclusive},
-    sync::{Arc, Mutex},
+    ops::{Range, RangeInclusive},
 };
 
 use rhai::{
     Array, CustomType, Dynamic, EvalAltResult, FnPtr, ImmutableString, NativeCallContext, INT,
 };
 
-use super::{RhaiResult, Ref, RefMut};
+use super::{Owned, Ref, RefMut, RhaiResult};
 
 pub type ArrayRef<'r, T> = Ref<'r, [T]>;
 
@@ -119,21 +115,34 @@ where
 
         ////////////////////////////////////////////////////////////////////////
 
+        let get = |this: &mut Self, idx: rhai::INT| -> Result<Ref<'static, T>, Dynamic> {
+            let idx = if idx < 0 {
+                match this.len().checked_sub(idx.unsigned_abs() as usize) {
+                    Some(x) => x,
+                    None => return Err(Dynamic::UNIT),
+                }
+            } else {
+                idx as usize
+            };
+
+            // SAFETY: we guard this with a witness..
+            let borrowed: &'static [T] = unsafe { this.get_unchecked_reference() };
+            let item: &'static T = borrowed.get(idx).ok_or(Dynamic::UNIT)?;
+
+            Ok(Ref::new(item, this.get_witness_copy()))
+        };
+
         builder
             // `get`: returns a cloned value
-            .with_fn("get", |this: &mut Self, idx: rhai::INT| -> Dynamic {
-                let err = || ().into();
-
-                let idx = if idx < 0 {
-                    match this.len().checked_sub(idx.unsigned_abs() as usize) {
-                        Some(x) => x,
-                        None => return err(),
-                    }
-                } else {
-                    idx as usize
-                };
-
-                this.get().get(idx).cloned().map(Dynamic::from::<T>).unwrap_or_else(err)
+            .with_fn("get", move |this: &mut Self, idx: rhai::INT| -> Dynamic {
+                let (Ok(x) | Err(x)) =
+                    get(this, idx).map(|x| x.get().clone()).map(Dynamic::from::<T>);
+                x
+            })
+            // `get_borrowed`: returns a `Ref`
+            .with_fn("get_borrowed", move |this: &mut Self, idx: rhai::INT| -> Dynamic {
+                let (Ok(x) | Err(x)) = get(this, idx).map(Dynamic::from);
+                x
             });
 
         ////////////////////////////////////////////////////////////////////////
@@ -203,6 +212,7 @@ where
 
         ////////////////////////////////////////////////////////////////////////
 
+        // TODO: offer `_borrowed` variants?
         builder
             // pop
             .with_fn("pop", |this: &mut Self| -> Dynamic {
@@ -309,6 +319,8 @@ where
             });
 
         ////////////////////////////////////////////////////////////////////////
+
+        // TODO: offer a borrowed variant?
 
         builder
             // for_each
@@ -568,12 +580,17 @@ mod tests {
     }
 
     use ComparableDynamic as D;
+    #[allow(non_snake_case)]
+    fn R<T>(val: &'static T) -> Ref<'static, T> { Ref::new(val, None) }
 
     test!(roundtrip: [123] => "arr" == ArrayRef::from(&[123]));
     test!(compare_array: [123] => "[1, 2, 3]" as (Array) == D([1 as INT, 2, 3]));
 
     tests! { (get)
+        regular_borrowed: [90i32] => "arr.get_borrowed(0)" as (Ref<i32>) == R(&90),
         regular: [90] => "arr.get(0)" == 90,
+        nested_borrowed: [[3]] => "arr.get_borrowed(0)" as (Ref<[i32; 1]>) == R(&[3]),
+        nested_borrowed_slice: [(&[3] as &'static [_])] => "arr.get_borrowed(0)" as (Ref<&[i32]>) == R(&[3]),
         nested: [[3]] => "arr.get(0)" == [3],
         negative: [90] => "arr.get(-1)" == 90,
         negative_2: [1, 2, 3, 4] => "arr.get(-4)" == 1,

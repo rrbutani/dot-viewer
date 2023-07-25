@@ -1,3 +1,4 @@
+pub mod scripting;
 mod terminal;
 mod ui;
 mod viewer;
