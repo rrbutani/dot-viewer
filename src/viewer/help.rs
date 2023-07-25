@@ -16,7 +16,8 @@ pub(super) const ROWS: &[&[&str]] = &[
     &["", "tab/backtab", "", "move between tabs"],
     &["Search", "tab", "", "autocomplete search keyword"],
     &["", "enter", "", "apply search"],
-    &["Command", "", "note: commands with (!) can be suffixed with ! to apply in-place instead of producing a new tab"],
+    &["Action Command", "", "note: commands with (!) can be suffixed with ! to apply in-place instead of producing a new tab"],
+    // TODO: pull long help!
     &["", "", "children(!) [(opt) depth]", "get up to [depth] children of the current node in a new tab"],
     &["", "", "parents(!) [(opt) depth]", "get up to [depth] parents of the current node in a new tab"],
     &["", "", "filter(!)", "apply filter on current matches in a new tab"],

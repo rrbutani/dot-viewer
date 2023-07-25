@@ -1,5 +1,8 @@
 use crate::viewer::{
-    command::{Command, CommandTrie},
+    action::{
+        self, ActionCommand, ActionCommandTable, Children, Export, Filter, MakeStub, MakeSubgraph,
+        Neighbors, Parents, Remove, Xdot,
+    },
     error::{DotViewerError, DotViewerResult},
     help,
     modes::{Mode, PopupMode, SearchMode},
@@ -13,8 +16,6 @@ use std::{fs, ops::Not};
 use graphviz_rs::prelude::*;
 
 use crossterm::event::KeyCode;
-
-use super::command::{Children, Export, Filter, Neighbors, Parents, Remove, Xdot, MakeSubgraph, MakeStub};
 
 /// `App` holds `dot-viewer` application states.
 ///
@@ -39,8 +40,8 @@ pub(crate) struct App {
     /// Most recent key event
     pub lookback: Option<KeyCode>,
 
-    /// Autocomplete support for commands
-    pub trie: CommandTrie,
+    /// Action commands
+    pub action_cmds: ActionCommandTable,
 
     /// Keybinding helps
     pub help: Table,
@@ -64,11 +65,11 @@ impl App {
 
         let lookback = None;
 
-        let trie = CommandTrie::new();
+        let action_cmds = action::command_table();
 
         let help = Table::new(help::HEADER, help::ROWS);
 
-        Ok(Self { quit, mode, result, tabs, input, lookback, trie, help })
+        Ok(Self { quit, mode, result, tabs, input, lookback, action_cmds, help })
     }
 
     /// Navigate to the next match.
@@ -147,26 +148,21 @@ impl App {
 
     /// Autocomplete user input.
     pub fn autocomplete_command(&mut self) {
-        if Command::parse(&self.input.key, false).is_err() {
-            self.autocomplete_cmd()
-        }
-    }
+        let suggestion = match self.mode {
+            Mode::Action => self.action_cmds.autocomplete(&self.input.key),
+            Mode::Selection => todo!(),
+            _ => None,
+        };
 
-    fn autocomplete_cmd(&mut self) {
-        let cmd = &self.input.key;
-        if let Some(cmd) = self.trie.trie_cmd.autocomplete(cmd) {
+        if let Some(cmd) = suggestion {
             self.input.set(cmd);
         }
     }
 
-    pub fn autocomplete_selection_command(&mut self) {
-        todo!()
-    }
-
     /// Parse and execute dot-viewer command
-    pub fn exec_command(&mut self) -> DotViewerResult<Success> {
-        use Command::*;
-        let command = match Command::parse(&self.input.key, true) {
+    pub fn exec_action_command(&mut self) -> DotViewerResult<Success> {
+        use ActionCommand::*;
+        let command = match self.action_cmds.parse(&self.input.key, true) {
             Ok(cmd) => cmd,
             Err(e) => {
                 self.set_normal_mode();
@@ -177,6 +173,10 @@ impl App {
                 )));
             }
         };
+
+        // TODO: clean up... does this really need to live in `app`? half of
+        //  this is just dispatching onto view functions that may produce a new
+        //  view..
 
         match command {
             MakeStub(s) => self.make_stub(s).map(|_| Success::default()),
@@ -200,6 +200,10 @@ impl App {
                 self.quit = true;
                 Ok(Success::default())
             }
+
+            Script {} => todo!(),
+            RegisteredCommand { name, script } => todo!(),
+            LoadScript {} => todo!(),
         }
     }
 
@@ -265,11 +269,12 @@ impl App {
     */
 
     /// Attempts to remove the currently selected nodes.
-    pub fn remove_selection(&mut self, Remove { cfg, in_place }: Remove) -> DotViewerResult<()> {
+    pub fn remove_selection(
+        &mut self,
+        Remove { config: cfg, in_place }: Remove,
+    ) -> DotViewerResult<()> {
         self.new_view_helper_with_err_handler(
-            |curr| {
-                curr.remove(curr.selection_as_node_ids(), cfg, Some(&curr.selection_info))
-            },
+            |curr| curr.remove(curr.selection_as_node_ids(), cfg, Some(&curr.selection_info)),
             in_place,
             |curr, (err, new_focus_node)| {
                 if let Some(focus) = &new_focus_node {
@@ -284,7 +289,7 @@ impl App {
     /// Attempts to remove the given nodes.
     pub fn remove_nodes(
         &mut self,
-        Remove { cfg, in_place }: Remove,
+        Remove { config: cfg, in_place }: Remove,
         nodes: impl IntoIterator<Item = NodeId>,
     ) -> DotViewerResult<()> {
         self.new_view_helper_with_err_handler(
@@ -313,26 +318,18 @@ impl App {
         )
     }
 
-    /// Extract a new view consisting of parents (ancestors) of the selected
-    /// node, up to a specified depth (optional).
     pub fn parents(&mut self, Parents { depth, in_place }: Parents) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.parents(depth), in_place)
     }
 
-    /// Extract a new view consisting of children of the selected node, up to
-    /// a specified depth (optional).
     pub fn children(&mut self, Children { depth, in_place }: Children) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.children(depth), in_place)
     }
 
-    /// Extract a new view which is a neighbor graph from the currently selected node,
-    /// up to a specified depth (optional)
     pub fn neighbors(&mut self, Neighbors { depth, in_place }: Neighbors) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.neighbors(depth), in_place)
     }
 
-    /// Apply filter on the current view, based on the current matches.
-    /// Opens a new tab with the filtered view.
     pub fn filter(&mut self, Filter { in_place }: Filter) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.filter(), in_place)
     }
@@ -341,7 +338,10 @@ impl App {
         self.new_view_helper(|curr| curr.make_stub(&name), in_place)
     }
 
-    pub fn make_subgraph(&mut self, MakeSubgraph { name, in_place }: MakeSubgraph) -> DotViewerResult<()> {
+    pub fn make_subgraph(
+        &mut self,
+        MakeSubgraph { name, in_place }: MakeSubgraph,
+    ) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.make_new_subgraph(&name), in_place)
     }
 
@@ -406,7 +406,7 @@ impl App {
     pub fn set_command_mode(&mut self) {
         self.input.clear();
 
-        self.mode = Mode::Command;
+        self.mode = Mode::Action;
     }
 
     pub fn set_selection_mode(&mut self) {

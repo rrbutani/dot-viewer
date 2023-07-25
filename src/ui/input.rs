@@ -12,7 +12,7 @@ use tui::{
 pub(super) fn draw_input<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App) {
     let title = match &app.mode {
         Mode::Normal => "Normal",
-        Mode::Command => "Command",
+        Mode::Action => "Command",
         Mode::Search(smode) => match smode {
             SearchMode::Fuzzy => "Fuzzy Search",
             SearchMode::Regex => "Regex Search",
@@ -22,7 +22,7 @@ pub(super) fn draw_input<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut Ap
 
     let block = surrounding_block(
         title.to_string(),
-        matches!(app.mode, Mode::Command) || matches!(app.mode, Mode::Search(_)),
+        matches!(app.mode, Mode::Action) || matches!(app.mode, Mode::Search(_)),
     );
 
     f.render_widget(block, chunk);
@@ -53,7 +53,7 @@ fn draw_result<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App) {
 fn draw_form<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App) {
     let input = Paragraph::new(app.input.key.clone()).style(match &app.mode {
         Mode::Normal => Style::default(),
-        Mode::Command | Mode::Search(_) => Style::default().fg(Color::Yellow),
+        Mode::Action | Mode::Search(_) => Style::default().fg(Color::Yellow),
         _ => unreachable!(),
     });
     f.render_widget(input, chunk);
@@ -61,7 +61,7 @@ fn draw_form<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App) {
     // cursor
     match &app.mode {
         Mode::Normal => {}
-        Mode::Command | Mode::Search(_) => f.set_cursor(chunk.x + app.input.cursor as u16, chunk.y),
+        Mode::Action | Mode::Search(_) => f.set_cursor(chunk.x + app.input.cursor as u16, chunk.y),
         _ => unreachable!(),
     }
 }

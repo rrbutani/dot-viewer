@@ -1,9 +1,9 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// `Mode` represents the context that the application, `dot-viewer` is in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum Mode {
     Normal,
     /// General commands.
-    Command,
+    Action,
     /// Commands that exclusively manipulate the current selection.
     Selection,
     Search(SearchMode),

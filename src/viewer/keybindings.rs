@@ -9,7 +9,7 @@ use crate::viewer::{
 use crossterm::event::{KeyCode, KeyEvent};
 use log::{info, warn};
 
-use super::command::{Export, Remove, RemoveCfg};
+use super::action::{Export, Remove, RemoveConfig};
 
 impl App {
     pub fn key(&mut self, key: KeyEvent) {
@@ -39,7 +39,7 @@ impl App {
     fn char(&mut self, c: char) -> DotViewerResult<Success> {
         match &self.mode {
             Mode::Normal => return self.char_normal(c),
-            Mode::Command => self.char_command(c)?,
+            Mode::Action => self.char_command(c)?,
             Mode::Selection => self.char_selection(c)?,
             Mode::Search(_) => self.char_search(c),
             Mode::Popup(_) => self.char_popup(c)?,
@@ -72,9 +72,10 @@ impl App {
             'e' => return self.export(Export { filename: None }),
             'd' | 'D' => {
                 if let Some(ref curr_node) = self.tabs.selected().current.selected() {
-                    let cfg = if c == 'd' { RemoveCfg::EdgesFrom } else { RemoveCfg::AllEdges };
+                    let cfg =
+                        if c == 'd' { RemoveConfig::EdgesFrom } else { RemoveConfig::AllEdges };
                     return self
-                        .remove_nodes(Remove { cfg, in_place: true }, [curr_node.clone()])
+                        .remove_nodes(Remove { config: cfg, in_place: true }, [curr_node.clone()])
                         .map(|_| Success::Silent);
                 }
             }
@@ -138,7 +139,7 @@ impl App {
                 let view = self.tabs.selected();
                 view.enter().map(|_| Success::default())
             }
-            Mode::Command => self.exec_command(),
+            Mode::Action => self.exec_action_command(),
             Mode::Selection => self.exec_selection_command(),
             Mode::Search(_) => {
                 self.set_normal_mode();
@@ -153,7 +154,7 @@ impl App {
 
     fn backspace(&mut self) -> DotViewerResult<()> {
         match &self.mode {
-            Mode::Command => self.input.delete(),
+            Mode::Action => self.input.delete(),
             Mode::Search(_) => {
                 self.input.delete();
                 self.update_search();
@@ -177,8 +178,7 @@ impl App {
     fn tab(&mut self) -> DotViewerResult<()> {
         match &self.mode {
             Mode::Normal => self.tabs.next(),
-            Mode::Command => self.autocomplete_command(),
-            Mode::Selection => self.autocomplete_selection_command(),
+            Mode::Action | Mode::Selection => self.autocomplete_command(),
             Mode::Search(smode) => match smode {
                 SearchMode::Fuzzy => self.autocomplete_fuzzy(),
                 SearchMode::Regex => self.autocomplete_regex(),

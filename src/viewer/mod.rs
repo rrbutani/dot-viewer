@@ -1,5 +1,5 @@
+mod action;
 mod app;
-mod command;
 mod error;
 mod help;
 mod keybindings;

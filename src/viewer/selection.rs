@@ -1,7 +1,4 @@
-use std::{
-    collections::{btree_set::Difference, HashSet},
-    fmt, iter, mem,
-};
+use std::{fmt, iter, mem};
 
 use graphviz_rs::prelude::{GraphId, NodeId};
 

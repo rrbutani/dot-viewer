@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::viewer::{
+    action::RemoveConfig,
     error::{DotViewerError, DotViewerResult},
     selection::{SelectionInfo, SelectionKind, SelectionOp},
     utils::{List, Tree, Trie},
@@ -16,8 +17,6 @@ use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use log::info;
 use rayon::prelude::*;
 use regex::Regex;
-
-use super::command::RemoveCfg;
 
 type Matcher = fn(&str, &str, &Graph) -> Option<Vec<usize>>;
 
@@ -280,7 +279,7 @@ impl View {
     pub fn remove<'n>(
         &self,
         node_ids_to_remove: impl IntoIterator<Item = &'n NodeId>,
-        cfg: RemoveCfg,
+        cfg: RemoveConfig,
         removal_source: Option<impl Display>,
     ) -> Result<View, (DotViewerError, Option<NodeId>)> {
         let node_ids_to_remove: HashSet<_> = node_ids_to_remove.into_iter().collect();
