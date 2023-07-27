@@ -102,6 +102,16 @@ impl App {
         view.goto_last()
     }
 
+    /// Scrolls up a page in the current tab.
+    pub fn up_page(&mut self) -> DotViewerResult<()> {
+        self.tabs.selected_mut().scroll_by_page(true)
+    }
+
+    /// Scrolls down a page in the current tab.
+    pub fn down_page(&mut self) -> DotViewerResult<()> {
+        self.tabs.selected_mut().scroll_by_page(false)
+    }
+
     /// Update search matches with trie.
     pub fn update_search(&mut self) {
         match &self.mode {

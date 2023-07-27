@@ -55,6 +55,16 @@ pub(crate) struct View {
 
     /// Tree holding the subgraph tree of the view
     pub subtree: Tree,
+
+    pub(crate) viewport_info: ViewportInfo,
+}
+
+// Used for scrolling; need to know how tall the viewport is.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub(crate) struct ViewportInfo {
+    pub(crate) current_list_height: usize,
+    pub(crate) prev_list_height: usize,
+    pub(crate) next_list_height: usize,
 }
 
 #[derive(PartialEq)]
@@ -99,6 +109,7 @@ impl View {
             selection_info,
             trie,
             subtree,
+            viewport_info: Default::default(),
         };
 
         view.update_adjacent().expect("there is always a selected current node on initialization");
@@ -196,6 +207,27 @@ impl View {
             Focus::Prev => self.prevs.last(),
             Focus::Next => self.nexts.last(),
         }
+
+        Ok(())
+    }
+
+    pub fn scroll_by_page(&mut self, up: bool) -> DotViewerResult<()> {
+        use Focus::*;
+
+        let (list, viewport_height) = match self.focus {
+            Current => (&mut self.current, self.viewport_info.current_list_height),
+            Prev => (&mut self.prevs, self.viewport_info.prev_list_height),
+            Next => (&mut self.nexts, self.viewport_info.next_list_height),
+        };
+
+        if up {
+            list.up(viewport_height)
+        } else {
+            list.down(viewport_height)
+        }
+
+        // Update the prev/next node tabs if needed.
+        if self.focus == Current { self.update_adjacent()?; }
 
         Ok(())
     }

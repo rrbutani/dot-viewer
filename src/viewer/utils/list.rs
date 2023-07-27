@@ -60,6 +60,20 @@ impl<T: Clone + Eq> List<T> {
         }
     }
 
+    pub fn down(&mut self, offs: usize) {
+        let pos = self.state.selected().unwrap_or(0);
+        let len = self.items.len();
+
+        let new_pos = pos.checked_add(offs).filter(|&p| p < len).unwrap_or(len.saturating_sub(1));
+        self.select(new_pos);
+    }
+
+    pub fn up(&mut self, offs: usize) {
+        let pos = self.state.selected().unwrap_or(0);
+        let new_pos = pos.saturating_sub(offs);
+        self.select(new_pos);
+    }
+
     pub fn select(&mut self, idx: usize) {
         if idx < self.items.len() {
             self.state.select(Some(idx));

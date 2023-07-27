@@ -26,6 +26,8 @@ impl App {
             KeyCode::Down => self.down().map(|_| Success::default()),
             KeyCode::Right => self.right().map(|_| Success::default()),
             KeyCode::Left => self.left().map(|_| Success::default()),
+            KeyCode::PageUp => self.up_page().map(|_| Success::default()),
+            KeyCode::PageDown => self.down_page().map(|_| Success::default()),
             _ => Ok(Success::default()),
         };
 
@@ -59,10 +61,12 @@ impl App {
             'j' => self.down()?,
             'k' => self.up()?,
             'l' => self.right()?,
-            'n' => self.goto_next_match()?,
-            'N' => self.goto_prev_match()?,
             'g' => self.goto_first()?,
             'G' => self.goto_last()?, // TODO: document
+            'f' => self.down_page()?,
+            'b' => self.up_page()?,
+            'n' => self.goto_next_match()?,
+            'N' => self.goto_prev_match()?,
             // layering violations:
             ' ' => self.tabs.selected().enter()?,
             '?' => self.set_popup_mode(PopupMode::Help),

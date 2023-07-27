@@ -276,3 +276,6 @@ Key | Actions
 
   - make the interface of the selection thing be allowed to view the current selection as a way to allow for optimizations
     + doesn't have to use the current selection, doesn't affect correctness (will still `&`/etc with the selection as is appropriate)
+
+  - [ ] `f` and `b` bindings for forward a page, back a page
+    + also page up/page down

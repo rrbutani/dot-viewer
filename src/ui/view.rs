@@ -53,6 +53,8 @@ fn draw_right<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
 }
 
 fn draw_current<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
+    view.viewport_info.current_list_height = (chunk.height as usize).saturating_sub(2);
+
     let progress = view.progress_current();
     let title = format!("Nodes {progress}");
     let block = surrounding_block(title, view.focus == Focus::Current);
@@ -129,6 +131,8 @@ fn draw_adjacent<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
 }
 
 fn draw_prevs<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
+    view.viewport_info.prev_list_height = (chunk.height as usize).saturating_sub(2);
+
     let block = surrounding_block("Prev Nodes".to_string(), view.focus == Focus::Prev);
 
     let list: Vec<ListItem> = (view.prevs.items.par_iter())
@@ -144,6 +148,8 @@ fn draw_prevs<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
 }
 
 fn draw_nexts<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
+    view.viewport_info.next_list_height = (chunk.height as usize).saturating_sub(2);
+
     let block = surrounding_block("Next Nodes".to_string(), view.focus == Focus::Next);
 
     let list: Vec<ListItem> = (view.nexts.items.par_iter())
