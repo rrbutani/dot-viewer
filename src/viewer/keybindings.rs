@@ -18,7 +18,7 @@ impl App {
         self.result = match key {
             KeyEvent {
                 code,
-                modifiers: KeyModifiers::NONE,
+                modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 state: _,
             } => match code {
