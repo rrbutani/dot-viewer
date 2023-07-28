@@ -28,6 +28,7 @@ better-panic = "0.3.0"
 log = "0.4.17"
 simplelog = "0.12.0"
 chrono = "0.4.23"
+itertools = "0.11"
 
 rhai = { version = "1.15", optional = true, features = ["internals"] }
 

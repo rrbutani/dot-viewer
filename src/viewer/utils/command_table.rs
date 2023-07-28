@@ -7,6 +7,7 @@ use std::{
 };
 
 use clap::{Command, FromArgMatches, Subcommand};
+use itertools::Itertools;
 use thiserror::Error;
 use tui::{
     style::{Modifier, Style},
@@ -405,6 +406,63 @@ impl<B: Subcommand, E: ExtraSubcommands<B>, C, R, A> CommandTable<'_, B, E, C, R
 
                 (self.validation_hook)(cmd, input, autocomplete_ctx)
             }
+        }
+    }
+
+    // helper function to handle whitespace properly for validation functions
+    // that just apply styles (and do not change the actual Content -- with some
+    // allowed exceptions (trailing hints))
+    //
+    // note that the function is allowed to return _extra_ spans to append
+    pub fn make_validate_hook_on_lexed<Cmd, AutoCtx>(
+        func: impl for<'i, 'a> Fn(Cmd, &mut [Span<'i>], &'a AutoCtx) -> Option<Vec<Span<'i>>>
+    ) -> impl for<'i, 'a> Fn(Cmd, &'i str, &'a AutoCtx) -> Spans<'i> {
+        fn eat_whitespace<'i>(str: &mut &'i str) -> Span<'i> {
+            let split_idx = str
+                .char_indices()
+                .take_while(|(_, c)| c.is_whitespace())
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(0);
+
+            let (whitespace, rest) = str.split_at(split_idx);
+            *str = rest;
+            Span::raw(Cow::Borrowed(whitespace))
+        }
+
+        move |cmd: Cmd, orig_inp: &str, auto_ctx: &AutoCtx| {
+            // An issue with using `split_whitespace` here is that it may
+            // make the text box bounce between a "normalized" "no extra
+            // spaces" view and the raw view (if additional typing causes
+            // the input to become invalid causing this hook to not be
+            // run...).
+            //
+            // Autocomplete doesn't have this issue because it gets to
+            // _replace_ what the user has written, not just augment it.
+            //
+            // So we preserve the whitespace too: (TODO: improve perf, use
+            // a better approach?)
+            let mut inp =
+                orig_inp.split_whitespace().map(Cow::Borrowed).map(Span::raw).collect::<Vec<_>>();
+            let whitespace = {
+                let mut str = orig_inp;
+
+                let mut arr = Vec::with_capacity(inp.len() + 1);
+                arr.push(eat_whitespace(&mut str));
+
+                for segment in &inp {
+                    str = str.strip_prefix(segment.content.as_ref()).unwrap();
+                    arr.push(eat_whitespace(&mut str));
+                }
+
+                arr
+            };
+
+            let extras = func(cmd, &mut inp, auto_ctx);
+
+            let out = whitespace.into_iter().interleave(inp.into_iter());
+            let out = out.chain(extras.into_iter().flatten());
+            Spans::from(out.collect_vec())
         }
     }
 
