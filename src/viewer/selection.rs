@@ -456,8 +456,20 @@ pub fn command_table() -> SelectionCommandTable {
                         }
                     },
 
-                    // If no node is specified there's nothing to check:
-                    Neighbors { .. } | Parents { .. } | Children { .. } |
+                    // If no node is specified:
+                    Neighbors { center: None, .. } | Parents { bottom: None, .. } | Children { root: None, .. } => {
+                        if let Some(node) = view.get_focused_node_from_focused_list() {
+                            extra.extend([
+                                Span::styled("  /* using focused node: `", HINT),
+                                Span::styled(node.to_string(), VALID_NODE),
+                                Span::styled("` */", HINT),
+                            ])
+                        } else {
+                            extra.extend([
+                                Span::styled("  /* no node is focused, please specify a node explicitly */", ERR)
+                            ])
+                        }
+                    }
                     Clear => { },
                     // If we're here it's a real command; don't know anything
                     // else about it:
