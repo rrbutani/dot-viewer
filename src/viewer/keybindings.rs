@@ -6,7 +6,7 @@ use crate::viewer::{
     view::{Focus, View},
 };
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use log::{info, warn};
 
 use super::action::{Export, Remove, RemoveConfig};
@@ -15,19 +15,42 @@ impl App {
     pub fn key(&mut self, key: KeyEvent) {
         info!("{:?}", key.code);
 
-        self.result = match key.code {
-            KeyCode::Char(c) => self.char(c),
-            KeyCode::Enter => self.enter(),
-            KeyCode::Backspace => self.backspace().map(|_| Success::default()),
-            KeyCode::Esc => self.esc().map(|_| Success::default()),
-            KeyCode::Tab => self.tab().map(|_| Success::default()),
-            KeyCode::BackTab => self.backtab().map(|_| Success::default()),
-            KeyCode::Up => self.up().map(|_| Success::default()),
-            KeyCode::Down => self.down().map(|_| Success::default()),
-            KeyCode::Right => self.right().map(|_| Success::default()),
-            KeyCode::Left => self.left().map(|_| Success::default()),
-            KeyCode::PageUp => self.up_page().map(|_| Success::default()),
-            KeyCode::PageDown => self.down_page().map(|_| Success::default()),
+        self.result = match key {
+            KeyEvent {
+                code,
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                state: _,
+            } => match code {
+                KeyCode::Char(c) => self.char(c),
+                KeyCode::Enter => self.enter(),
+                KeyCode::Backspace => self.backspace().map(|_| Success::default()),
+                KeyCode::Esc => self.esc().map(|_| Success::default()),
+                KeyCode::Tab => self.tab().map(|_| Success::default()),
+                KeyCode::BackTab => self.backtab().map(|_| Success::default()),
+                KeyCode::Up => self.up().map(|_| Success::default()),
+                KeyCode::Down => self.down().map(|_| Success::default()),
+                KeyCode::Right => self.right().map(|_| Success::default()),
+                KeyCode::Left => self.left().map(|_| Success::default()),
+                KeyCode::PageUp => self.up_page().map(|_| Success::default()),
+                KeyCode::PageDown => self.down_page().map(|_| Success::default()),
+                _ => Ok(Success::default()),
+            },
+            KeyEvent {
+                code: KeyCode::Char(c @ ('c' | 'q')),
+                modifiers: KeyModifiers::CONTROL,
+                kind: _,
+                state: _,
+            } => {
+                if c == 'c' {
+                    self.esc().map(|_| Success::default())
+                } else if c == 'q' {
+                    self.quit = true;
+                    Ok(Success::default())
+                } else {
+                    unreachable!()
+                }
+            }
             _ => Ok(Success::default()),
         };
 
