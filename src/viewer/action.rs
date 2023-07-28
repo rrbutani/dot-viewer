@@ -155,13 +155,13 @@ pub enum RemoveConfig {
     #[value(name = "all", aliases(["force", "a"]))]
     AllEdges,
     /// Removes all edges originating _from_ the selected nodes.
-    #[default]
     #[value(name = "outgoing", aliases(["from", "f", "out", "deps"]))]
     EdgesFrom,
     /// Removes all edges leading _to_ the selected nodes.
     #[value(name = "incoming", aliases(["to", "t", "in", "rdeps"]))]
     EdgesTo,
     /// Does not remove any edges.
+    #[default]
     #[value(name = "none", aliases(["n", "safe"]))]
     NoEdges,
 }

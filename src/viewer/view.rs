@@ -404,11 +404,13 @@ impl View {
         // Remove the edges we've been told to remove:
         let edges = {
             let mk_edge_id = |(from, to)| EdgeId { from, tailport: None, to, headport: None };
+            // outgoing (from the current node)
             let edges_froms = node_ids_to_remove.par_iter().flat_map(|&n| {
-                self.graph.tos(n).unwrap().into_par_iter().map(|from| (from.clone(), n.clone()))
+                self.graph.tos(n).unwrap().into_par_iter().map(|to| (n.clone(), to.clone()))
             });
+            // incoming (to the current node)
             let edges_tos = node_ids_to_remove.par_iter().flat_map(|&n| {
-                self.graph.froms(n).unwrap().into_par_iter().map(|to| (n.clone(), to.clone()))
+                self.graph.froms(n).unwrap().into_par_iter().map(|from| (from.clone(), n.clone()))
             });
             // Note the flipping of to/from! Our terminology is
             // current-node-centric; _from_ the current node, _to_ the current

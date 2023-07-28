@@ -74,7 +74,7 @@ impl App {
             'd' | 'D' => {
                 if let Some(ref curr_node) = self.tabs.selected_mut().current.selected() {
                     let cfg =
-                        if c == 'd' { RemoveConfig::EdgesFrom } else { RemoveConfig::AllEdges };
+                        if c == 'd' { RemoveConfig::NoEdges } else { RemoveConfig::AllEdges };
                     return self
                         .remove_nodes(Remove { config: cfg, in_place: true }, [curr_node.clone()])
                         .map(|_| Success::Silent);
