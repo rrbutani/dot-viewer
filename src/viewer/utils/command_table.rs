@@ -13,7 +13,7 @@ use tui::{
     text::{Span, Spans},
 };
 
-use super::trie::Trie;
+use super::{trie::Trie, styles::{ERR, ITAL, HINT}};
 
 #[allow(clippy::type_complexity)]
 pub struct CommandTable<
@@ -320,7 +320,82 @@ impl<B: Subcommand, E: ExtraSubcommands<B>, C, R, A> CommandTable<'_, B, E, C, R
         // TODO: clean up!
         match self.parse(input, true) {
             Err(_) => {
-               todo!()
+                let mut processed_inputs: Vec<Cow<str>> =
+                    input.split_whitespace().map(Cow::Borrowed).collect();
+                (self.pre_parse_hook)(&mut processed_inputs);
+                let processed_cmd = processed_inputs.first().map(|x| x.as_ref()).unwrap_or("");
+
+                // note that we're assuming that the first space separated
+                // word still corresponds with the command after the processing
+                // hook runs...
+                if let Some((cmd, rest)) = input.split_once(' ') {
+                    // if the subcommand is in our table or has an unambiguous
+                    // prefix match assume the issue is with the args and highlight
+                    // those in red instead:
+                    if self.cmd_map.contains_key(processed_cmd)
+                        || self
+                            .trie
+                            .autocomplete(processed_cmd)
+                            .filter(|x| self.cmd_map.contains_key(x))
+                            .is_some()
+                    {
+                        // If there are no args assume the issue is missing args:
+                        if rest.is_empty() {
+                            Spans::from(vec![
+                                // extra chars to indicate missing args, also make
+                                // the command light red?..
+                                Span::styled(cmd, ITAL /*.fg(Color::Rgb(40, 0x99, 0x99))*/),
+                                Span::raw(" "),
+                                Span::styled("  ", ERR),
+                                Span::styled("  /* needs more args */", HINT),
+                            ])
+                        } else {
+                            // Highlight just the args:
+                            Spans::from(vec![
+                                Span::styled(cmd, ITAL),
+                                Span::raw(" "),
+                                Span::styled(rest, ERR),
+                                Span::styled("  /* error in arguments */", HINT),
+                            ])
+                        }
+                    } else {
+                        // Otherwise highlight the first word in red and the dim the
+                        // rest:
+                        Spans::from(vec![
+                            Span::styled(cmd, ERR),
+                            Span::raw(" "),
+                            Span::styled(
+                                rest,
+                                Style::default()
+                                    .add_modifier(Modifier::ITALIC)
+                                    .add_modifier(Modifier::DIM),
+                            ),
+                            Span::styled("  /* unknown subcommand */", HINT),
+                        ])
+                    }
+                } else {
+                    // if in our table/has a prefix match it's okay; assume it just
+                    // needs args:
+                    if self.cmd_map.contains_key(processed_cmd)
+                        || self
+                            .trie
+                            .autocomplete(processed_cmd)
+                            .filter(|x| self.cmd_map.contains_key(x))
+                            .is_some()
+                    {
+                        Spans::from(vec![
+                            Span::styled(input, ITAL),
+                            Span::raw(" "),
+                            // Extra chars to signify missing stuff...
+                            Span::styled("  ", ERR),
+                            Span::styled("  /* needs more args */", HINT),
+                        ])
+                    } else {
+                        // we don't know what's wrong; highlight the whole thing in
+                        // red
+                        Spans::from(vec![Span::styled(input, ERR)])
+                    }
+                }
             }
             Ok(cmd) => {
                 // TODO: verify that beneath the styles the text is the same?

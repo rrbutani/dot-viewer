@@ -6,6 +6,8 @@ mod tabs;
 mod tree;
 mod trie;
 
+pub(crate) mod styles;
+
 pub(crate) use command_table::{CommandTable, NoExtraSubcommands};
 pub(crate) use input::Input;
 pub(crate) use list::List;
