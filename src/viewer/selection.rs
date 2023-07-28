@@ -1,4 +1,4 @@
-use std::{fmt, iter, mem};
+use std::{borrow::Cow, fmt, iter, mem};
 
 use clap::Subcommand;
 use graphviz_rs::prelude::{GraphId, NodeId};
@@ -7,6 +7,7 @@ use graphviz_rs::prelude::{GraphId, NodeId};
 use super::{
     modes::SearchMode,
     utils::{CommandTable, NoExtraSubcommands},
+    View,
 };
 
 /// Represents the stack of operations leading to the current selection.
@@ -294,6 +295,7 @@ pub type SelectionCommandTable = CommandTable<
     NoExtraSubcommands,
     Option<SelectionOp>,
     SelectionCommand,
+    View,
 >;
 pub fn command_table() -> SelectionCommandTable {
     SelectionCommandTable::new_with_hooks(
@@ -333,6 +335,10 @@ pub fn command_table() -> SelectionCommandTable {
                     *f = Cow::Owned(format!("{op}{f}"));
                 }
             }
+        },
+        /* args autocomplete hook */
+        |SelectionCommand { kind, .. }, mut inp, view| -> Option<String> {
+          todo!()
         },
     )
 }

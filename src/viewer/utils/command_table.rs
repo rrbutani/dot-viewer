@@ -22,6 +22,7 @@ pub struct CommandTable<
     Extra: ExtraSubcommands<CommandEnum>,
     Ctx = (),
     Ret = CommandEnum,
+    AutocompleteCtx = (),
 > {
     _out: PhantomData<CommandEnum>,
     extra: Vec<Extra>,
@@ -36,6 +37,15 @@ pub struct CommandTable<
     pre_parse_hook: Box<dyn Fn(&mut Vec<Cow<str>>) -> Ctx + 'f>,
     post_parse_hook: Box<dyn Fn(CommandEnum, Ctx) -> Ret + 'f>,
     post_autocomplete_hook: Box<dyn Fn(Ctx, &mut Vec<Cow<str>>) + 'f>,
+
+    // Regular autocomplete is limited to filling in the subcommand name.
+    //
+    // This autocomplete hook allows for completion for arguments of
+    // subcommands.
+    //
+    // Runs after `post_parse_hook`.
+    successful_parse_autocomplete_hook:
+        Box<dyn Fn(Ret, Vec<Cow<str>>, &AutocompleteCtx) -> Option<String> + 'f>,
 }
 
 /// Trait for types providing extra subcommands to extend `CommandEnum`.
@@ -83,24 +93,28 @@ fn extract_all_names_from_command(cmd: &Command) -> impl Iterator<Item = &str> {
     iter::once(cmd.get_name()).chain(cmd.get_all_aliases())
 }
 
-impl<Base: Subcommand, Extra: ExtraSubcommands<Base>> CommandTable<'_, Base, Extra> {
+impl<Base: Subcommand, Extra: ExtraSubcommands<Base>, AutoCtx>
+    CommandTable<'_, Base, Extra, (), Base, AutoCtx>
+{
     #[allow(unused)]
     pub fn new() -> Self {
         Self::new_with_hooks(
             |_inp| {},
             |arg, _ctx| arg,
             |_ctx, _inp| {},
+            |_cmd, _inp, _auto_ctx| None,
         )
     }
 }
 
-impl<'f, Base: Subcommand, Extra: ExtraSubcommands<Base>, Ctx, Ret>
-    CommandTable<'f, Base, Extra, Ctx, Ret>
+impl<'f, Base: Subcommand, Extra: ExtraSubcommands<Base>, Ctx, Ret, AutoCtx>
+    CommandTable<'f, Base, Extra, Ctx, Ret, AutoCtx>
 {
     pub fn new_with_hooks(
         pre: impl Fn(&mut Vec<Cow<str>>) -> Ctx + 'f,
         post: impl Fn(Base, Ctx) -> Ret + 'f,
         post_autocomplete: impl Fn(Ctx, &mut Vec<Cow<str>>) + 'f,
+        success_autocomplete: impl Fn(Ret, Vec<Cow<str>>, &AutoCtx) -> Option<String> + 'f,
     ) -> Self {
         let cmd = Command::new("dot-viewer subcommand")
             // tell `clap` not to "ignore" the first arg; for actual arg parsing
@@ -130,6 +144,7 @@ impl<'f, Base: Subcommand, Extra: ExtraSubcommands<Base>, Ctx, Ret>
             pre_parse_hook: Box::new(pre),
             post_parse_hook: Box::new(post),
             post_autocomplete_hook: Box::new(post_autocomplete),
+            successful_parse_autocomplete_hook: Box::new(success_autocomplete),
         }
     }
 
@@ -179,7 +194,7 @@ impl<'f, Base: Subcommand, Extra: ExtraSubcommands<Base>, Ctx, Ret>
     }
 }
 
-impl<B: Subcommand, E: ExtraSubcommands<B>, C, R> CommandTable<'_, B, E, C, R> {
+impl<B: Subcommand, E: ExtraSubcommands<B>, C, R, A> CommandTable<'_, B, E, C, R, A> {
     pub fn parse(&self, input: &str, allow_prefix_match: bool) -> Result<R, clap::Error> {
         let mut inputs: Vec<Cow<str>> = input.split_whitespace().map(Cow::Borrowed).collect();
         let ctx = (self.pre_parse_hook)(&mut inputs);
@@ -256,7 +271,7 @@ impl<B: Subcommand, E: ExtraSubcommands<B>, C, R> CommandTable<'_, B, E, C, R> {
         Ok(cmd)
     }
 
-    pub fn autocomplete(&self, input: &str) -> Option<String> {
+    pub fn autocomplete(&self, input: &str, autocomplete_ctx: Option<&A>) -> Option<String> {
         match self.parse(input, false) {
             // If we failed to parse try autocomplete for the first word:
             Err(_) => {
@@ -277,7 +292,13 @@ impl<B: Subcommand, E: ExtraSubcommands<B>, C, R> CommandTable<'_, B, E, C, R> {
 
                 Some(inputs.join(" ")) // note: normalizes whitespace!
             }
-            Ok(_) => None,
+            // If it succeeded try the user autocomplete hook:
+            Ok(cmd) => {
+                let Some(auto_ctx) = autocomplete_ctx else { return None };
+
+                let inputs: Vec<Cow<str>> = input.split_whitespace().map(Cow::Borrowed).collect();
+                (self.successful_parse_autocomplete_hook)(cmd, inputs, auto_ctx)
+            }
         }
     }
 

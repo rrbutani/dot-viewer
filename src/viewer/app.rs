@@ -159,9 +159,10 @@ impl App {
 
     /// Autocomplete user input.
     pub fn autocomplete_command(&mut self) {
+        let view = Some(self.tabs.selected());
         let suggestion = match self.mode {
-            Mode::Action => self.action_cmds.autocomplete(&self.input.key),
-            Mode::Selection => todo!(),
+            Mode::Action => self.action_cmds.autocomplete(&self.input.key, view),
+            Mode::Selection => self.selection_cmds.autocomplete(&self.input.key, view),
             _ => None,
         };
 

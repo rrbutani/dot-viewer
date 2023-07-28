@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 
-use super::utils::{CommandTable, NoExtraSubcommands};
+
+use super::{utils::{CommandTable, NoExtraSubcommands}, View};
 
 use clap::{Args, Subcommand, ValueEnum};
-
 
 /// Commands triggered under `:`.
 ///
@@ -204,7 +204,7 @@ pub struct DuplicateTab {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub type ActionCommandTable = CommandTable<'static, ActionCommand, NoExtraSubcommands, (), ActionCommand>;
+pub type ActionCommandTable = CommandTable<'static, ActionCommand, NoExtraSubcommands, (), ActionCommand, super::View>;
 pub fn command_table() -> ActionCommandTable {
     CommandTable::new_with_hooks(
         |args| {
@@ -245,5 +245,6 @@ pub fn command_table() -> ActionCommandTable {
                 *first = Cow::Owned(first.to_string() + "!");
             }
         },
+        |_cmd, _inp, _auto_ctx| None, // autocomplete hook; not really applicable
     )
 }
