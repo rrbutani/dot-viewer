@@ -49,7 +49,7 @@ pub(crate) struct View {
     pub matches: List<(usize, Vec<usize>)>,
 
     /// Current selection (set of indexes into `current`)
-    pub selection: HashSet<usize>,
+    pub selection: BTreeSet<usize>,
     /// Stack of operations that led to the current selection
     pub selection_info: SelectionInfo,
 
@@ -97,7 +97,7 @@ impl View {
         let pattern = String::new();
         let matches = List::from_iter(Vec::new());
 
-        let selection = HashSet::with_capacity(graph.nodes_len());
+        let selection = BTreeSet::new();
         let selection_info = SelectionInfo::default();
 
         let subtree = Tree::from_graph(&graph);
@@ -270,6 +270,68 @@ impl View {
         self.update_adjacent()?;
 
         Ok(())
+    }
+
+    pub fn goto_selection_next(&mut self) -> DotViewerResult<()> {
+        self.goto_selection(true)
+    }
+
+    pub fn goto_selection_prev(&mut self) -> DotViewerResult<()> {
+        self.goto_selection(false)
+    }
+
+    fn goto_selection(&mut self, forwards: bool) -> DotViewerResult<()> {
+        use std::ops::Bound::{Excluded as E, Included as I};
+
+        let curr_idx = self.current.state.selected().unwrap_or(0);
+        let len = self.current.items.len();
+
+        // Range to search before wrapping, range to search _after_ wrapping.
+        //
+        // Note that we include the whole range!
+        let (before_cursor, after_cursor, cursor) = (
+            Some((E(curr_idx), E(len) /* curr_idx+1 .. len */))
+                // BTreeSet::range panics on equal excluded bounds:
+                .filter(|(a, b)| a != b),
+            Some((I(0), E(curr_idx) /* 0..curr_idx */)),
+            Some((I(curr_idx), I(curr_idx)) /* curr_idx ..= curr_idx */)
+        );
+
+        // Find the next node in the selection in the choosen direction:
+        let make_iterator =
+            |range: Option<_>| range.map(|r| self.selection.range(r)).into_iter().flatten();
+
+        let next_selected_node = if !forwards {
+            let primary = make_iterator(after_cursor).rev();
+            let secondary = make_iterator(before_cursor).rev();
+            let mut it = primary.chain(secondary).chain(make_iterator(cursor));
+
+            it.next()
+        } else {
+            let primary = make_iterator(before_cursor);
+            let secondary = make_iterator(after_cursor);
+            let mut it = primary.chain(secondary).chain(make_iterator(cursor));
+
+            it.next()
+        };
+
+        match next_selected_node {
+            Some(&idx) => {
+                self.current.select(idx);
+                self.update_adjacent()?;
+
+                Ok(())
+            }
+            None => {
+                // Because we included the whole range, this must mean that the
+                // selection is empty.
+                assert!(self.selection.is_empty());
+                Err(DotViewerError::ViewerError(format!(
+                    "cannot go to {} selected node; selection is empty",
+                    if forwards { "next" } else { "previous" }
+                )))
+            }
+        }
     }
 }
 
