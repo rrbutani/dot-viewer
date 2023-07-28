@@ -34,7 +34,7 @@ impl App {
                 KeyCode::Left => self.left().map(|_| Success::default()),
                 KeyCode::PageUp => self.up_page().map(|_| Success::default()),
                 KeyCode::PageDown => self.down_page().map(|_| Success::default()),
-                _ => Ok(Success::default()),
+                other => Err(DotViewerError::KeyError(other)),
             },
             KeyEvent {
                 code: KeyCode::Char(c @ ('c' | 'q')),
