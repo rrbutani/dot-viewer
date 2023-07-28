@@ -13,7 +13,7 @@ use tui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Span, Spans, Text},
     widgets::{Block, List, ListItem, Paragraph, Wrap},
     Frame,
 };
@@ -68,9 +68,34 @@ fn draw_current<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
 
     // TODO(perf): it'd be nice if we only did this computation for the nodes in
     // the viewport...
+    //
+    // Unfortunately (because `ListState` is opaque and because `List` insists
+    // on receiving a `Vec` instead of an iterator that it could `skip`) we
+    // don't have a great way of achieving this..
+    //
+    // For now we'll cheat a little bit and conservatively assume that the
+    // offset is within ± height of the selected index. (we can actually do
+    // better by essentially replicating the logic in `List::get_items_bounds`
+    // but this is already material savings for large node lists).
+    //
+    // Note that we're still _allocating_ a larger-than-needed `Vec` but.. I'll
+    // leave the issue for another day.
+    let range = {
+        let height = chunk.height - 2;
+        let curr = view.current.state.selected().unwrap_or(0);
+        let min = curr.saturating_sub(height as usize);
+        let max = curr.saturating_add(height as usize).min(view.current.items.len());
+
+        min.saturating_sub(1)..=max
+    };
+    let blank = ListItem::new(Text::raw("error!!! you should never see this!"));
+
     let list: Vec<ListItem> = (view.current.items.par_iter())
         .enumerate()
         .map(|(idx, id)| {
+            // See above.
+            if !range.contains(&idx) { return blank.clone(); }
+
             let mut spans = Vec::with_capacity(id.len() + 2);
 
             // Selection status:
@@ -87,6 +112,9 @@ fn draw_current<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
             //
             // btreeset lookup is `O(log(n))` and we do it n times; this'd be
             // linear
+            //
+            // however... turning this into a parallel iterator (very doable!)
+            // requires some work so I'll leave this for another day
             if view.selection.contains(&idx) {
                 spans.push(Span::styled("✓ ", Style::default().fg(Color::Rgb(150, 255, 150))));
             } else {
