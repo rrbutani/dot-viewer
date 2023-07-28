@@ -11,11 +11,9 @@ use crate::viewer::{
     view::View,
 };
 
-use std::{fs, ops::Not};
+use std::{fs, io, ops::Not, path::Path};
 
 use graphviz_rs::prelude::*;
-
-use crossterm::event::KeyCode;
 
 /// `App` holds `dot-viewer` application states.
 ///
@@ -513,18 +511,52 @@ fn write_graph<'a>(
         graph = &highlighted_graph;
     }
 
-    // TODO: write out the file and _then_ swap it into place so that xdot doesn't freak out as much
-
     let mut open_options = fs::OpenOptions::new();
     let open_options = open_options.write(true).truncate(true).create(true);
 
     fs::create_dir_all("./exports")?;
 
-    let mut file_export = open_options.open(format!("./exports/{filename}"))?;
-    graph.to_dot(&mut file_export)?;
+    // point is to write out the file and _then_ swap it into place so that xdot
+    // doesn't freak out as much
+    fn write_file_by_swapping_into_place<R>(
+        options: &fs::OpenOptions,
+        path: impl AsRef<Path>,
+        func: impl FnOnce(&mut fs::File) -> io::Result<R>,
+    ) -> io::Result<R> {
+        if path.as_ref().exists() {
+            // gotto swap!
+            //
+            // we want to make a tempfile and then `rename` it into place;
+            // `rename` will fail if our tempfile orginiates from a different
+            // filesystem so we'll just make a tempfile in `exports` ourselves
+            // instead of using the `tepmfile` crate
 
-    let mut file_current = open_options.open("./exports/current.dot")?;
-    graph.to_dot(&mut file_current)?;
+            // Error if the temp file already exists; this suggests there are
+            // multiple instances of `dot-viewer` running... (or that we once
+            // crashed mid-rename..)
+            let mut opts = fs::OpenOptions::new();
+            opts.write(true).truncate(false).create(true);
 
-    Ok(Success::ExportSuccess(filename))
+            let temp = "./exports/temp-file.dot";
+            let mut file = opts.open(temp)?;
+            let res = func(&mut file)?;
+
+            // Now rename:
+            fs::rename(temp, path)?;
+            Ok(res)
+        } else {
+            let mut file = options.open(path)?;
+            func(&mut file)
+        }
+    }
+
+    let write_graph = |mut f: &mut fs::File| graph.to_dot(&mut f);
+
+    let default = "./exports/current.dot";
+    write_file_by_swapping_into_place(open_options, default, write_graph)?;
+
+
+    let mut file_current = open_options.open(filename)?;
+    write_file_by_swapping_into_place(open_options, default, write_graph)?;
+    Ok(Success::ExportSuccess(additional_filename.unwrap_or_else(|| default.to_string())))
 }
