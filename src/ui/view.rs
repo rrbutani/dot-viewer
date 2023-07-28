@@ -66,6 +66,8 @@ fn draw_current<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
         matches.insert(*idx, highlight);
     }
 
+    // TODO(perf): it'd be nice if we only did this computation for the nodes in
+    // the viewport...
     let list: Vec<ListItem> = (view.current.items.par_iter())
         .enumerate()
         .map(|(idx, id)| {
@@ -77,6 +79,14 @@ fn draw_current<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
             // extra trickery on our part (either reinvent the logic in `List`
             // or use the width in `chunk` to truncate/pad the node labels +
             // append selection status)
+
+            // TODO(perf): we could take advantage of the fact that the btreeset
+            // is already to sorted and iterate through it in step with the list
+            // (i.e. always know the _next_ selected node, once we've hit it
+            // pull from the selection iterator again) for some speedup
+            //
+            // btreeset lookup is `O(log(n))` and we do it n times; this'd be
+            // linear
             if view.selection.contains(&idx) {
                 spans.push(Span::styled("✓ ", Style::default().fg(Color::Rgb(150, 255, 150))));
             } else {
