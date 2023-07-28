@@ -70,7 +70,7 @@ impl App {
             ' ' => self.tabs.selected_mut().enter()?,
             // '?' => self.set_popup_mode(PopupMode::Help),
             'q' => self.quit = true,
-            'e' => return self.export(Export { filename: None }),
+            'e' => return self.export(Export { filename: None }, false),
             'd' | 'D' => {
                 if let Some(ref curr_node) = self.tabs.selected_mut().current.selected() {
                     let cfg =

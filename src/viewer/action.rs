@@ -192,6 +192,13 @@ pub struct Neighbors {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Args)]
 pub struct Export {
+    /// File to write out the current graph to (in addition to `current.dot`
+    /// which is always exported).
+    ///
+    /// The given filename is appended to `exports/` to get a path.
+    ///
+    /// If no filename is specified, a name is derived from the current tab's
+    /// name.
     pub filename: Option<String>,
 }
 

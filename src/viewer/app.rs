@@ -196,7 +196,7 @@ impl App {
             Children(c) => self.children(c).map(|_| Success::default()),
             Parents(p) => self.parents(p).map(|_| Success::default()),
             Neighbors(n) => self.neighbors(n).map(|_| Success::default()),
-            Export(e) => self.export(e),
+            Export(e) => self.export(e, true),
             Xdot(x) => self.xdot(x),
             DuplicateTab(d) => self.duplicate(d).map(|_| Success::default()),
             RenameTab(r) => self.rename(r).map(|_| Success::default()),
@@ -392,7 +392,11 @@ impl App {
     }
 
     /// Export the current view to dot.
-    pub fn export(&mut self, Export { filename }: Export) -> DotViewerResult<Success> {
+    pub fn export(
+        &mut self,
+        Export { filename }: Export,
+        do_additional_export: bool,
+    ) -> DotViewerResult<Success> {
         self.set_normal_mode();
 
         let viewer = self.tabs.selected();
@@ -405,8 +409,15 @@ impl App {
 
         // TODO: write out selection stack?
 
-        let default: String = viewer.title.chars().filter(|c| !c.is_whitespace()).collect();
-        let filename = filename.unwrap_or(format!("{default}.dot"));
+        // Note: we limit the length to 200 chars..
+        let filename = match filename {
+            None if do_additional_export => {
+                let default: String =
+                    viewer.title.chars().take(200).filter(|c| !c.is_whitespace()).collect();
+                Some(format!("{default}.dot"))
+            }
+            x => x,
+        };
 
         write_graph(filename, graph, selected)
     }
@@ -477,19 +488,22 @@ impl App {
     }
 }
 
-fn valid_filename(filename: &str) -> bool {
+pub(crate) fn valid_filename(filename: &str) -> bool {
     (!filename.contains('/')) && filename.ends_with(".dot")
 }
 
 fn write_graph<'a>(
-    filename: String,
+    additional_filename: Option<String>,
     graph: &Graph,
     selection: Option<impl Iterator<Item = &'a NodeId>>,
 ) -> DotViewerResult<Success> {
-    if !valid_filename(&filename) {
-        return Err(DotViewerError::CommandError(format!("invalid dot filename: {filename}")));
+    if let Some(filename) = &additional_filename {
+        if !valid_filename(filename) {
+            return Err(DotViewerError::CommandError(format!("invalid dot filename: {filename}")));
+        }
     }
 
+    // Highlight selected nodes!
     let mut graph = graph;
     let mut highlighted_graph;
     if let Some(selection) = selection {
@@ -551,12 +565,16 @@ fn write_graph<'a>(
     }
 
     let write_graph = |mut f: &mut fs::File| graph.to_dot(&mut f);
+    if let Some(filename) = &additional_filename {
+        write_file_by_swapping_into_place(
+            open_options,
+            format!("./exports/{filename}"),
+            write_graph,
+        )?
+    }
 
     let default = "./exports/current.dot";
     write_file_by_swapping_into_place(open_options, default, write_graph)?;
 
-
-    let mut file_current = open_options.open(filename)?;
-    write_file_by_swapping_into_place(open_options, default, write_graph)?;
     Ok(Success::ExportSuccess(additional_filename.unwrap_or_else(|| default.to_string())))
 }
