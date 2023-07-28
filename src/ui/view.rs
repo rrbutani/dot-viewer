@@ -60,6 +60,14 @@ fn draw_right<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
     draw_metadata(f, chunks[1], view);
 }
 
+fn mk_selection_info_span(idx: &usize, view: &View) -> Span<'static> {
+    if view.selection.contains(idx) {
+        Span::styled("✓ ", Style::default().fg(Color::Rgb(150, 255, 150)))
+    } else {
+        Span::raw("  ")
+    }
+}
+
 fn draw_current<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
     view.viewport_info.current_list_height = (chunk.height as usize).saturating_sub(2);
 
@@ -125,11 +133,7 @@ fn draw_current<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
             //
             // however... turning this into a parallel iterator (very doable!)
             // requires some work so I'll leave this for another day
-            if view.selection.contains(&idx) {
-                spans.push(Span::styled("✓ ", Style::default().fg(Color::Rgb(150, 255, 150))));
-            } else {
-                spans.push(Span::raw("  "));
-            }
+            spans.push(mk_selection_info_span(&idx, view));
             let offs = spans.len();
 
             // Node name with chars styled based on the current search matches:
@@ -201,7 +205,8 @@ fn draw_prevs<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
     let block = surrounding_block("Prev Nodes".to_string(), view.focus == Focus::Prev);
 
     let list: Vec<ListItem> = (view.prevs.items.par_iter())
-        .map(|id| ListItem::new(vec![Spans::from(Span::raw(id.as_str()))]))
+        .map(|id| (id, mk_selection_info_span(&view.current_node_to_idx_map[id], view)))
+        .map(|(id, sel_info)| ListItem::new(Spans::from(vec![sel_info, Span::raw(id.as_str())])))
         .collect();
 
     let list = List::new(list)
@@ -218,7 +223,8 @@ fn draw_nexts<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
     let block = surrounding_block("Next Nodes".to_string(), view.focus == Focus::Next);
 
     let list: Vec<ListItem> = (view.nexts.items.par_iter())
-        .map(|id| ListItem::new(vec![Spans::from(Span::raw(id.as_str()))]))
+        .map(|id| (id, mk_selection_info_span(&view.current_node_to_idx_map[id], view)))
+        .map(|(id, sel_info)| ListItem::new(Spans::from(vec![sel_info, Span::raw(id.as_str())])))
         .collect();
 
     let list = List::new(list)

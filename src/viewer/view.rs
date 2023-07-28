@@ -40,7 +40,7 @@ pub struct View {
     /// Topologically sorted list of all nodes in the view
     pub(crate) current: List<String>, // has `idx => NodeId`
     // `NodeId => idx`; helps update the selection
-    current_node_to_idx_map: HashMap<NodeId, usize>,
+    pub(crate) current_node_to_idx_map: HashMap<NodeId, usize>,
     current_node_trie: Trie,
 
     /// List of previous nodes of the currently selected node
