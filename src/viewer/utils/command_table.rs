@@ -35,6 +35,7 @@ pub struct CommandTable<
 
     pre_parse_hook: Box<dyn Fn(&mut Vec<Cow<str>>) -> Ctx + 'f>,
     post_parse_hook: Box<dyn Fn(CommandEnum, Ctx) -> Ret + 'f>,
+    post_autocomplete_hook: Box<dyn Fn(Ctx, &mut Vec<Cow<str>>) + 'f>,
 }
 
 /// Trait for types providing extra subcommands to extend `CommandEnum`.
@@ -85,7 +86,11 @@ fn extract_all_names_from_command(cmd: &Command) -> impl Iterator<Item = &str> {
 impl<Base: Subcommand, Extra: ExtraSubcommands<Base>> CommandTable<'_, Base, Extra> {
     #[allow(unused)]
     pub fn new() -> Self {
-        Self::new_with_hooks(|_| {}, |_, ()| {})
+        Self::new_with_hooks(
+            |_inp| {},
+            |arg, _ctx| arg,
+            |_ctx, _inp| {},
+        )
     }
 }
 
@@ -95,6 +100,7 @@ impl<'f, Base: Subcommand, Extra: ExtraSubcommands<Base>, Ctx, Ret>
     pub fn new_with_hooks(
         pre: impl Fn(&mut Vec<Cow<str>>) -> Ctx + 'f,
         post: impl Fn(Base, Ctx) -> Ret + 'f,
+        post_autocomplete: impl Fn(Ctx, &mut Vec<Cow<str>>) + 'f,
     ) -> Self {
         let cmd = Command::new("dot-viewer subcommand")
             // tell `clap` not to "ignore" the first arg; for actual arg parsing
@@ -123,6 +129,7 @@ impl<'f, Base: Subcommand, Extra: ExtraSubcommands<Base>, Ctx, Ret>
             cmd_map,
             pre_parse_hook: Box::new(pre),
             post_parse_hook: Box::new(post),
+            post_autocomplete_hook: Box::new(post_autocomplete),
         }
     }
 
@@ -177,7 +184,7 @@ impl<B: Subcommand, E: ExtraSubcommands<B>, C, R> CommandTable<'_, B, E, C, R> {
         let mut inputs: Vec<Cow<str>> = input.split_whitespace().map(Cow::Borrowed).collect();
         let ctx = (self.pre_parse_hook)(&mut inputs);
 
-        let mut cmd = match self.parse_tokenized(&inputs) {
+        let cmd = match self.parse_tokenized(&inputs) {
             Ok(cmd) => cmd,
             Err(e) => {
                 // If there's exactly one command that has what was entered for
@@ -250,11 +257,27 @@ impl<B: Subcommand, E: ExtraSubcommands<B>, C, R> CommandTable<'_, B, E, C, R> {
     }
 
     pub fn autocomplete(&self, input: &str) -> Option<String> {
-        // TODO: not sure why we check for `parse` first...
-        if self.parse(input, false).is_err() {
-            self.trie.autocomplete(input)
-        } else {
-            None
+        match self.parse(input, false) {
+            // If we failed to parse try autocomplete for the first word:
+            Err(_) => {
+                let mut inputs: Vec<Cow<str>> =
+                    input.split_whitespace().map(Cow::Borrowed).collect();
+                let ctx = (self.pre_parse_hook)(&mut inputs);
+
+                let Some(first) = inputs.first_mut() else {
+                    // Need a first word to do autocomplete!
+                    return None;
+                };
+
+                let new_first = self.trie.autocomplete(first)?;
+                *first = Cow::Owned(new_first);
+
+                // Let the post hook fix it up:
+                (self.post_autocomplete_hook)(ctx, &mut inputs);
+
+                Some(inputs.join(" ")) // note: normalizes whitespace!
+            }
+            Ok(_) => None,
         }
     }
 

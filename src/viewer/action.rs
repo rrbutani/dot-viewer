@@ -229,5 +229,6 @@ pub fn command_table() -> ActionCommandTable {
             }
         },
         |action, ()| action,
+        |_ctx, _inp| {},
     )
 }

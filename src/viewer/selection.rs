@@ -302,6 +302,8 @@ pub fn command_table() -> SelectionCommandTable {
           todo!()
         },
         /* post parse hook */ |kind, op| SelectionCommand { op, kind },
+        /* subcommand autocomplete post hook */
+        |op, inp| { todo!() },
     )
 }
 
