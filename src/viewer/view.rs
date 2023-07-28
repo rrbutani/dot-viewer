@@ -39,6 +39,7 @@ pub struct View {
     pub(crate) current: List<String>, // has `idx => NodeId`
     // `NodeId => idx`; helps update the selection
     current_node_to_idx_map: HashMap<NodeId, usize>,
+    current_node_trie: Trie,
 
     /// List of previous nodes of the currently selected node
     pub(crate) prevs: List<String>,
@@ -96,6 +97,7 @@ impl View {
 
         let current_node_to_idx_map =
             current.items.iter().cloned().enumerate().map(|(i, n)| (n, i)).collect();
+        let current_node_trie = Trie::from_iter(current.items.iter().cloned());
 
         let pattern = String::new();
         let matches = List::from_iter(Vec::new());
@@ -111,6 +113,7 @@ impl View {
             focus,
             current,
             current_node_to_idx_map,
+            current_node_trie,
             prevs,
             nexts,
             pattern,
@@ -334,6 +337,10 @@ impl View {
             }
         }
     }
+}
+
+impl View {
+    pub fn get_nodes_trie(&self) -> &Trie { &self.current_node_trie }
 }
 
 impl View {

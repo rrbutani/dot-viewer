@@ -338,7 +338,35 @@ pub fn command_table() -> SelectionCommandTable {
         },
         /* args autocomplete hook */
         |SelectionCommand { kind, .. }, mut inp, view| -> Option<String> {
-          todo!()
+            use SelectionKind::*;
+            match &kind {
+                Neighbors { center: Some(node), .. }
+                | Parents { bottom: Some(node), .. }
+                | Children { root: Some(node), .. }
+                | Toggle { node } => {
+                    if let Some(new_node) = view.get_nodes_trie().autocomplete(node) {
+                        let idx = match kind {
+                            Neighbors { .. } | Parents { .. } | Children { .. } => 2,
+                            Toggle { .. } => 1,
+                            _ => unreachable!(),
+                        };
+
+                        assert_eq!(inp[idx].as_ref(), node);
+                        inp[idx] = Cow::Owned(new_node);
+
+                        Some(inp.join(" "))
+                    } else {
+                        None
+                    }
+                }
+                Neighbors { .. } | Parents { .. } | Children { .. } => None,
+                SubGraph { .. } => {
+                    /* could do... */
+                    None
+                }
+                RegisteredCommand { .. } => None,
+                Search { .. } => unreachable!(),
+            }
         },
     )
 }
