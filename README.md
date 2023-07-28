@@ -177,21 +177,22 @@ Key | Actions
         - not sure... this will be tricky
       * [ ] `script [script path] <(opt) ... args to script>`
         - can use `rhai`
-        - interface should be: `fn filter(&Graph, curr_selection: &[&NodeId]) -> &[NodeId] {}`
-          + where it's overloaded (consuming the second arg should be optional)
+        - interface should be: `fn update_selection(&Graph, curr_selection: &[&NodeId], focus: Option<&NodeId>) -> &[NodeId] {}`
+          + where it's overloaded (consuming the second and third args should be optional)
           + and we'd go apply `new`, `intersection`, `union`, `difference`, `symmetric-difference` as appropriate?
-      * eventually can expand into a more general scripting interface, not bound to selections (i.e. signature: `(graph: &Graph, selection: Option<&[&NodeId]>) -> new_graph: Graph`)
+          + I think the default should maybe be `new` just for this command though? or not
+      * eventually can expand into a more general scripting interface, not bound to selections (i.e. signature: `(graph: &Graph, selection: Option<&[&NodeId]>, focus: Option<&NodeId>) -> new_graph: Graph`)
 
-  - [ ] misc: make the trie thing allow hitting enter and selecting the command with the prefix if there's only one
+  - [x] misc: make the trie thing allow hitting enter and selecting the command with the prefix if there's only one
 
   - Commands:
     + [x] `filter(!)`: filter down to selection (aka narrow)
       * breaks the existing workflow; narrowing down to search results will now require: `[ <search> <`s` search> <:filter> ]`
     + [x] `remove(!)`:
       * removes selected nodes, also removes all edges to/from these nodes!
-    + [ ] `make-stub(!) <name>`
+    + [x] `make-stub(!) <name>`
       * replaces selected nodes with a new single node
-        - [ ] node is placed at highest parent subgraph of the selected nodes
+        - [x] node is placed at highest parent subgraph of the selected nodes
         - edges are rewritten to point to the stub node
       * [x] stub node should have `peripheries=2`
       * inherit attrs? nah
@@ -199,7 +200,7 @@ Key | Actions
       * need to check if this makes the graph cyclic and if so: error
     + [x] `make-subgraph(!) [subgraph name]`: turn selection into new subgraph (fallible)
       * [x] on parent subgraph error error move cursor to problematic node?
-    + [ ] `duplicate <(opt) new tab name>`
+    + [x] `duplicate <(opt) new tab name>`
       * makes a new tab that's a copy
     + [ ] `script(!) [script path] <(opt) ... args to script>`
       * applies the script to the current graph
@@ -212,7 +213,7 @@ Key | Actions
     + [x] can keep: neighbors, children, parents
       * why not? essentially just shorthand for: ``[ <`s` `neighbors <>`> <:filter> ]`` but produces better names for the tabs
         - [ ] unless we wanna record the operations we do in the current selection name... hmmm. (TODO)
-    + [ ] rename
+    + [x] rename
     + [x] close, export, xdot
 
   - [x] misc: should have a "toggle" (t) to select/unselect current node (cursor)
@@ -226,37 +227,22 @@ Key | Actions
     + [ ] feature gate?
 
   - search:
-    + [ ] make R "search in within selection"
-    + [ ] make ? "fuzzy search in within selection"
+    + [x] make R "search in within selection"
+    + [x] make ? "fuzzy search in within selection"
 
   - [x] misc: `:?` for help
   - [x] misc: `q` for quit (in addition to `:q`)
   - [x] misc: `e` for export (in addition to `:export`)
 
-  - [ ] misc(export): write out the file and _then_ swap it into place (iff a file already exists at the given path) so that xdot doesn't freak out as much
+  - [x] misc(export): write out the file and _then_ swap it into place (iff a file already exists at the given path) so that xdot doesn't freak out as much
 
   - [x] have `d`/`D` remove/force remove focused node (when focused on the current list)
-  - [ ] TODO: have `d` remove edge when the focus != current...
 
   - [ ] TODO: fix tests in dot-graph crate... (post-rename)
 
-  - [ ] titlebar: show number/percent selected (bottom left?)
+  - [x] titlebar: show number/percent selected (bottom left?)
 
-  - [ ] TODO: keybinds for prev/next in selection (`[`, `]`)
-  - [ ] TODO: tab name abbrev in middle (i.e. `...`, based on window width?)
-
-  - [ ] TODO: label clusters! (in mk-subgraph..)
-
-  - TODO(future): register aliases
-    + this'd make it easy to run scripts; it'd look like a built-in command..
-      * though we'd maybe want a `load` distinction; don't want to be re-reading the .rhai file and reparsing/optimizing the AST every time, probably..
-  - [ ] actually let's maybe just make it "register script" for now
-    + these can live on the app I guess?
-    + or maybe we should make this something scripts can specify (in addition)?
-      * i.e. you export an `EXTRA_SELECTION_COMMANDS`/`EXTRA_ACTION_COMMANDS` map or something; command name to function (also help text?)...
-        - error on collision
-    + tricky, tricky, tricky
-    + note: we'd want to add this to the logs for all current tabs!
+  - [x] TODO: keybinds for prev/next in selection (`[`, `]`)
 
   - test `mk-stub`:
     + [x] cycle
@@ -266,16 +252,41 @@ Key | Actions
     + [x] edge rewriting
     + [x] that common subgraph placement works!
 
-  - [ ] have `e` just export `current.dot`
-  - [ ] record a action log per tab, offer a way to dump it
+  - [x] have `e` just export `current.dot`
+
+  - [x] autocomplete node names
+  - [x] have live feedback for commands as you are typing
+    + [x] parse errors
+    + [x] semantically invalid command (i.e. node provided doesn't exist)
+      * [x] or name given _already_ exists
+      * don't want to go too far because then we'll be recreating the actual logic of executing the commands but a little seems useful and fine
+
+  - [x] `f` and `b` bindings for forward a page, back a page
+    + [x] also page up/page down
+
+---
+
+  - [ ] TODO: tab name abbrev in middle (i.e. `...`, based on window width?)
+  - [ ] TODO: have `d` remove edge when the focus != current...
+
+  - [ ] TODO: label clusters! (in mk-subgraph..)
+
+  - make the interface of the selection thing be allowed to view the current selection as a way to allow for optimizations
+    + doesn't have to use the current selection, doesn't affect correctness (will still `&`/etc with the selection as is appropriate)
+
+  - [ ] record an action log per tab, offer a way to dump it
 
   - [ ] have a way to dump the input history??
   - [ ] up/down autocomplete? reverse history search? grrr
     + could use rustyline or something but I'm not going to bother
 
-
-  - make the interface of the selection thing be allowed to view the current selection as a way to allow for optimizations
-    + doesn't have to use the current selection, doesn't affect correctness (will still `&`/etc with the selection as is appropriate)
-
-  - [ ] `f` and `b` bindings for forward a page, back a page
-    + also page up/page down
+  - [ ] TODO(future): register aliases
+    + this'd make it easy to run scripts; it'd look like a built-in command..
+      * though we'd maybe want a `load` distinction; don't want to be re-reading the .rhai file and reparsing/optimizing the AST every time, probably..
+  - [ ] actually let's maybe just make it "register script" for now
+    + these can live on the app I guess?
+    + or maybe we should make this something scripts can specify (in addition)?
+      * i.e. you export an `EXTRA_SELECTION_COMMANDS`/`EXTRA_ACTION_COMMANDS` map or something; command name to function (also help text?)...
+        - error on collision
+    + tricky, tricky, tricky
+    + note: we'd want to add this to the logs for all current tabs!
