@@ -352,11 +352,10 @@ impl View {
     ///
     /// We expect to only call this function when the focus is on the node list.
     pub fn toggle(&mut self) -> DotViewerResult<()> {
-        assert!(self.focus == Focus::Current);
+
 
         let node = self
-            .current
-            .selected()
+            .get_focused_node_from_focused_list()
             .ok_or_else(|| DotViewerError::ViewerError("no node selected".to_string()))?;
 
         self.apply_selection_command(None, SelectionKind::Toggle { node })?;
@@ -536,7 +535,7 @@ impl View {
             Parents { bottom: node, .. } |
             Children { root: node, .. } => {
                 if node.is_none() {
-                    let current_focus = self.current.selected()
+                    let current_focus = self.get_focused_node_from_focused_list()
                         .ok_or_else(|| DotViewerError::CommandError("no node specified for selection command and no node currently focused".to_string()))?;
                     *node = Some(current_focus);
                 }
@@ -1145,9 +1144,20 @@ impl View {
 }
 
 impl View {
+    // Gets the focused node in the current list.
     pub fn current_id(&self) -> String {
         self.current.selected().expect("there is always a current id selected in a view")
     }
+
+    // Gets the focused node for the list that's currently focused!
+    pub fn get_focused_node_from_focused_list(&self) -> Option<NodeId> {
+        match self.focus {
+            Focus::Current => self.current.selected(),
+            Focus::Prev => self.prevs.selected(),
+            Focus::Next => self.nexts.selected(),
+        }
+    }
+
 
     pub fn matched_id(&self) -> Option<String> {
         self.matches.selected().map(|(idx, _)| self.current.items[idx].clone())

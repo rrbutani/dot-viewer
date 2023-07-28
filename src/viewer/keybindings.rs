@@ -96,7 +96,7 @@ impl App {
             '[' => self.goto_prev_in_selection()?,
             ']' => self.goto_next_in_selection()?,
             // layering violations:
-            ' ' => self.tabs.selected_mut().enter()?,
+            ' ' => self.tabs.selected_mut().space()?,
             // '?' => self.set_popup_mode(PopupMode::Help),
             'q' => self.quit = true,
             'e' => return self.export(Export { filename: None }, false),
@@ -296,6 +296,10 @@ impl View {
             Focus::Prev | Focus::Next => self.goto_adjacent(),
             Focus::Current => self.toggle(),
         }
+    }
+
+    pub fn space(&mut self) -> DotViewerResult<()> {
+        self.toggle()
     }
 
     pub fn up(&mut self) -> DotViewerResult<()> {
