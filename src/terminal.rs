@@ -60,11 +60,22 @@ fn run<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<()> {
     loop {
         terminal.draw(|f| ui::draw_app(f, &mut app))?;
 
-        if let Event::Key(key) = event::read()? {
-            app.key(key);
+        if app.quit {
+            break;
         }
 
-        if app.quit {
+        loop {
+            // Do not redraw unless we get a key event or a window resize event.
+            match event::read()? {
+                Event::Key(key) => app.key(key),
+                Event::Resize(_, _) => {},
+
+
+                Event::FocusGained | Event::FocusLost | Event::Mouse(_) | Event::Paste(_) => {
+                    continue;
+                }
+            }
+
             break;
         }
     }
