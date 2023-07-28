@@ -187,7 +187,7 @@ impl App {
     }
 
     /// Parse and execute dot-viewer command
-    pub fn exec_action_command(&mut self) -> DotViewerResult<Success> {
+    pub fn exec_action_command(&mut self, ctrl_pressed: bool) -> DotViewerResult<Success> {
         use ActionCommand::*;
         let command = match self.action_cmds.parse(&self.input.key, true) {
             Ok(cmd) => cmd,
@@ -205,7 +205,7 @@ impl App {
         //  this is just dispatching onto view functions that may produce a new
         //  view..
 
-        match command {
+        let ret = match command {
             MakeStub(s) => self.make_stub(s).map(|_| Success::default()),
             MakeSubgraph(s) => self.make_subgraph(s).map(|_| Success::default()),
             RemoveSelection(r) => self.remove_selection(r).map(|_| Success::default()),
@@ -233,10 +233,16 @@ impl App {
             Script {} => todo!(),
             RegisteredCommand { .. } => todo!(),
             LoadScript {} => todo!(),
+        };
+
+        if ret.is_err() || !ctrl_pressed {
+            self.set_normal_mode();
         }
+
+        ret
     }
 
-    pub fn exec_selection_command(&mut self) -> DotViewerResult<Success> {
+    pub fn exec_selection_command(&mut self, ctrl_pressed: bool) -> DotViewerResult<Success> {
         let SelectionCommand { op, kind } = match self.selection_cmds.parse(&self.input.key, true) {
             Ok(cmd) => cmd,
             Err(e) => {
@@ -259,7 +265,9 @@ impl App {
         let ret = self.tabs.selected_mut().apply_selection_command(op, kind)
             .map(|()| Success::default());
 
-        self.set_normal_mode();
+        if ret.is_err() || !ctrl_pressed {
+            self.set_normal_mode();
+        }
 
         ret
     }
@@ -270,8 +278,6 @@ impl App {
         in_place: bool,
         on_err: impl FnOnce(&mut View, E) -> DotViewerError,
     ) -> DotViewerResult<()> {
-        self.set_normal_mode();
-
         let current: &mut View = self.tabs.selected_mut();
         let new = match func(current) {
             Ok(new) => new,
@@ -413,8 +419,6 @@ impl App {
     }
 
     pub fn rename(&mut self, RenameTab { name }: RenameTab) -> DotViewerResult<()> {
-        self.set_normal_mode();
-
         self.tabs.selected_mut().title = name;
         Ok(())
     }
@@ -425,8 +429,6 @@ impl App {
         Export { filename }: Export,
         do_additional_export: bool,
     ) -> DotViewerResult<Success> {
-        self.set_normal_mode();
-
         let viewer = self.tabs.selected();
         let graph = &viewer.graph;
         let selected = viewer
@@ -452,8 +454,6 @@ impl App {
 
     /// Launch `xdot.py`.
     pub fn xdot(&mut self, Xdot { filename }: Xdot) -> DotViewerResult<Success> {
-        self.set_normal_mode();
-
         let path = format!("./exports/{filename}");
 
         if !std::path::Path::new(&path).exists() {
@@ -476,8 +476,6 @@ impl App {
     /// When a subgraph id is selected in the subgraph tree,
     /// it opens a new tab containing only the selected subgraph.
     pub fn subgraph(&mut self) -> DotViewerResult<()> {
-        self.set_normal_mode();
-
         let view_current = self.tabs.selected_mut();
         let view_new = view_current.subgraph()?;
         self.tabs.open(view_new);

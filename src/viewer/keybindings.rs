@@ -13,7 +13,7 @@ use super::action::{Export, Remove, RemoveConfig};
 
 impl App {
     pub fn key(&mut self, key: KeyEvent) {
-        info!("{:?}", key.code);
+        info!("{:?}", key);
 
         self.result = match key {
             KeyEvent {
@@ -23,7 +23,7 @@ impl App {
                 state: _,
             } => match code {
                 KeyCode::Char(c) => self.char(c),
-                KeyCode::Enter => self.enter(),
+                KeyCode::Enter => self.enter(false),
                 KeyCode::Backspace => self.backspace().map(|_| Success::default()),
                 KeyCode::Esc => self.esc().map(|_| Success::default()),
                 KeyCode::Tab => self.tab().map(|_| Success::default()),
@@ -36,6 +36,12 @@ impl App {
                 KeyCode::PageDown => self.down_page().map(|_| Success::default()),
                 other => Err(DotViewerError::KeyError(other)),
             },
+            KeyEvent {
+                code: KeyCode::Enter | KeyCode::Char('o'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                state: _
+            } => self.enter(true),
             KeyEvent {
                 code: KeyCode::Char(c @ ('c' | 'q')),
                 modifiers: KeyModifiers::CONTROL,
@@ -151,14 +157,14 @@ impl App {
         todo!()
     }
 
-    fn enter(&mut self) -> DotViewerResult<Success> {
+    fn enter(&mut self, ctrl_pressed: bool) -> DotViewerResult<Success> {
         match &self.mode {
             Mode::Normal => {
                 let view = self.tabs.selected_mut();
                 view.enter().map(|_| Success::default())
             }
-            Mode::Action => self.exec_action_command(),
-            Mode::Selection => self.exec_selection_command(),
+            Mode::Action => self.exec_action_command(ctrl_pressed),
+            Mode::Selection => self.exec_selection_command(ctrl_pressed),
             Mode::Search(_) => {
                 self.set_normal_mode();
                 Ok(Success::default())
