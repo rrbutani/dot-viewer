@@ -462,7 +462,7 @@ impl App {
         self.mode = Mode::Normal;
     }
 
-    pub fn set_command_mode(&mut self) {
+    pub fn set_action_mode(&mut self) {
         self.input.clear();
 
         self.mode = Mode::Action;

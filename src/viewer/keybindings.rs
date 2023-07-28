@@ -51,7 +51,7 @@ impl App {
         match c {
             '/' | '?' => self.set_search_mode(SearchMode::Fuzzy { in_selection: c == '?' }),
             'r' | 'R' => self.set_search_mode(SearchMode::Regex { in_selection: c == 'R' }),
-            ':' => self.set_command_mode(),
+            'a' | ':' => self.set_action_mode(),
             's' | '"' => self.set_selection_mode(),
             'c' => self.tabs.close()?,
             'h' => self.left()?,
@@ -73,8 +73,7 @@ impl App {
             'e' => return self.export(Export { filename: None }, false),
             'd' | 'D' => {
                 if let Some(ref curr_node) = self.tabs.selected_mut().current.selected() {
-                    let cfg =
-                        if c == 'd' { RemoveConfig::NoEdges } else { RemoveConfig::AllEdges };
+                    let cfg = if c == 'd' { RemoveConfig::NoEdges } else { RemoveConfig::AllEdges };
                     return self
                         .remove_nodes(Remove { config: cfg, in_place: true }, [curr_node.clone()])
                         .map(|_| Success::Silent);
