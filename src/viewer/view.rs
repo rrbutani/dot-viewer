@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fmt::Display,
     iter,
 };
@@ -34,7 +34,10 @@ pub(crate) struct View {
     /// Current focus
     pub focus: Focus,
     /// Topologically sorted list of all nodes in the view
-    pub current: List<String>,
+    pub current: List<String>, // has `idx => NodeId`
+    // `NodeId => idx`; helps update the selection
+    current_node_to_idx_map: HashMap<NodeId, usize>,
+
     /// List of previous nodes of the currently selected node
     pub prevs: List<String>,
     /// List of next nodes of the currently selected node
@@ -88,6 +91,9 @@ impl View {
         let prevs = List::from_iter(Vec::new());
         let nexts = List::from_iter(Vec::new());
 
+        let current_node_to_idx_map =
+            current.items.iter().cloned().enumerate().map(|(i, n)| (n, i)).collect();
+
         let pattern = String::new();
         let matches = List::from_iter(Vec::new());
 
@@ -101,6 +107,7 @@ impl View {
             graph,
             focus,
             current,
+            current_node_to_idx_map,
             prevs,
             nexts,
             pattern,
@@ -131,7 +138,7 @@ impl View {
             .par_iter()
             .map(|&idx| &self.current.items[idx])
             .filter(|&node_id| new.graph.nodes().contains(node_id))
-            .map(|node_id| new.current.find(node_id).unwrap());
+            .map(|node_id| new.current_node_to_idx_map.get(node_id).unwrap());
         new.selection.par_extend(selected_node_indexes);
 
         new.selection_info = self.selection_info.clone();
@@ -254,8 +261,9 @@ impl View {
     /// Navigate to the currently selected node with `id`.
     /// The current node list will be focused on the selected node.
     pub fn goto(&mut self, id: &str) -> DotViewerResult<()> {
-        let idx = (self.current)
-            .find(id)
+        let &idx = self
+            .current_node_to_idx_map
+            .get(id)
             .ok_or(DotViewerError::ViewerError(format!("no such node {id:?}")))?;
 
         self.current.select(idx);

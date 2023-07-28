@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use std::borrow::Borrow;
-
 use tui::widgets::ListState;
 
 // https://github.com/fdehau/tui-rs/blob/master/examples/list.rs
@@ -82,13 +80,5 @@ impl<T: Clone + Eq> List<T> {
 
     pub fn selected(&self) -> Option<T> {
         self.state.selected().map(|i| self.items[i].clone())
-    }
-
-    pub fn find<Q>(&self, key: &Q) -> Option<usize>
-    where
-        T: Borrow<Q>,
-        Q: Eq + ?Sized,
-    {
-        self.items.iter().position(|item| item.borrow() == key)
     }
 }
