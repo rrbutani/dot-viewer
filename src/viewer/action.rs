@@ -229,6 +229,21 @@ pub fn command_table() -> ActionCommandTable {
             }
         },
         |action, ()| action,
-        |_ctx, _inp| {},
+        /* post autocomplete hook */
+        |(), inp| {
+            // this undoes our pre_parse hook's `!` -> `--in-place` which is
+            // particularly annoying for users in this case because it the
+            // `--in-place` is appended meaning that if the user was in the
+            // middle of typing out an arg they will have to backspace..
+            //
+            // not perfect; will rewrite an actual postfix `--in-place` to the
+            // `!` form... but I think that's okay
+            if inp.len() > 1 && inp.last().filter(|x| x.as_ref() == "--in-place").is_some() {
+                inp.pop();
+                let first = inp.first_mut().unwrap();
+
+                *first = Cow::Owned(first.to_string() + "!");
+            }
+        },
     )
 }
