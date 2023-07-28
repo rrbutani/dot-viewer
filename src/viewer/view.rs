@@ -56,7 +56,7 @@ pub struct View {
     pub selection_info: SelectionInfo,
 
     /// Trie for user input autocompletion
-    pub trie: Trie,
+    pub matches_trie: Trie,
 
     /// Tree holding the subgraph tree of the view
     pub(crate) subtree: Tree,
@@ -117,7 +117,7 @@ impl View {
             matches,
             selection,
             selection_info,
-            trie,
+            matches_trie: trie,
             subtree,
             viewport_info: Default::default(),
         };
@@ -816,8 +816,8 @@ impl View {
 
 impl View {
     /// Autocomplete a given keyword, coming from `tab` keybinding.
-    pub fn autocomplete(&self, key: &str) -> Option<String> {
-        self.trie.autocomplete(key)
+    pub fn autocomplete_matches(&self, key: &str) -> Option<String> {
+        self.matches_trie.autocomplete(key)
     }
 
     /// Update prevs and nexts lists based on the selected current node.
@@ -838,13 +838,21 @@ impl View {
     }
 
     /// Update matches based on the given matching function `match` with input `key`.
-    fn update_matches(&mut self, matcher: Matcher, pattern: &str) {
-        let matches: Vec<(usize, Vec<usize>)> = (self.current.items.par_iter())
-            .enumerate()
-            .filter_map(|(idx, id)| {
-                matcher(id, pattern, &self.graph).map(|highlight| (idx, highlight))
-            })
-            .collect();
+    fn update_matches(&mut self, matcher: Matcher, pattern: &str, in_selection: bool) {
+        let matches: Vec<(usize, Vec<usize>)> = if in_selection {
+            self.selection.par_iter().filter_map(|&idx| {
+                let id = &self.current.items[idx];
+                matcher(id, pattern, &self.graph)
+                    .map(|highlight| (idx, highlight))
+            }).collect()
+        } else {
+            self.current.items.par_iter()
+                .enumerate()
+                .filter_map(|(idx, id)| {
+                    matcher(id, pattern, &self.graph).map(|highlight| (idx, highlight))
+                })
+                .collect()
+        };
 
         self.pattern = pattern.to_string();
         self.matches = List::from_iter(matches);
@@ -852,20 +860,20 @@ impl View {
 
     /// Update matches in fuzzy search mode.
     /// Fuzzy matcher matches input against node ids.
-    pub fn update_fuzzy(&mut self, key: &str) {
-        self.update_matches(match_fuzzy, key);
+    pub fn update_fuzzy(&mut self, key: &str, in_selection: bool) {
+        self.update_matches(match_fuzzy, key, in_selection);
     }
 
     /// Update matches in regex search mode.
     /// Regex matcher matches input against node represented in raw dot format string.
-    pub fn update_regex(&mut self, key: &str) {
-        self.update_matches(match_regex, key);
+    pub fn update_regex(&mut self, key: &str, in_selection: bool) {
+        self.update_matches(match_regex, key, in_selection);
     }
 
     /// Update trie based on the current matches.
-    pub fn update_trie(&mut self) {
+    pub fn update_matches_trie(&mut self) {
         let nodes = self.matches.items.iter().map(|(idx, _)| self.current.items[*idx].clone());
-        self.trie = Trie::from_iter(nodes);
+        self.matches_trie = Trie::from_iter(nodes);
     }
 }
 

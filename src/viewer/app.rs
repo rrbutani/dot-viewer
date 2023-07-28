@@ -123,10 +123,10 @@ impl App {
                 let key = &self.input.key;
 
                 match smode {
-                    SearchMode::Fuzzy => view.update_fuzzy(key),
-                    SearchMode::Regex => view.update_regex(key),
+                    SearchMode::Fuzzy { in_selection } => view.update_fuzzy(key, in_selection),
+                    SearchMode::Regex { in_selection } => view.update_regex(key, in_selection),
                 }
-                view.update_trie();
+                view.update_matches_trie();
 
                 // ignore goto errors while updating search matches
                 let _ = view.goto_match();
@@ -136,25 +136,25 @@ impl App {
     }
 
     /// Autocomplete user input.
-    pub fn autocomplete_fuzzy(&mut self) {
+    pub fn autocomplete_fuzzy(&mut self, in_selection: bool) {
         let view = self.tabs.selected_mut();
 
         let key = &self.input.key;
-        if let Some(key) = view.autocomplete(key) {
-            view.update_fuzzy(&key);
-            view.update_trie();
+        if let Some(key) = view.autocomplete_matches(key) {
+            view.update_fuzzy(&key, in_selection);
+            view.update_matches_trie();
             self.input.set(key);
         }
     }
 
     /// Autocomplete user input.
-    pub fn autocomplete_regex(&mut self) {
+    pub fn autocomplete_regex(&mut self, in_selection: bool) {
         let view = self.tabs.selected_mut();
 
         let key = &self.input.key;
-        if let Some(key) = view.autocomplete(key) {
-            view.update_regex(&key);
-            view.update_trie();
+        if let Some(key) = view.autocomplete_matches(key) {
+            view.update_regex(&key, in_selection);
+            view.update_matches_trie();
             self.input.set(key);
         }
     }

@@ -50,8 +50,8 @@ impl App {
 
     fn char_normal(&mut self, c: char) -> DotViewerResult<Success> {
         match c {
-            '/' => self.set_search_mode(SearchMode::Fuzzy),
-            'r' => self.set_search_mode(SearchMode::Regex),
+            '/' | '?' => self.set_search_mode(SearchMode::Fuzzy { in_selection: c == '?' }),
+            'r' | 'R' => self.set_search_mode(SearchMode::Regex { in_selection: c == 'R' }),
             ':' => self.set_command_mode(),
             's' => self.set_selection_mode(),
             'c' => self.tabs.close()?,
@@ -69,7 +69,7 @@ impl App {
             ']' => self.goto_next_in_selection()?,
             // layering violations:
             ' ' => self.tabs.selected_mut().enter()?,
-            '?' => self.set_popup_mode(PopupMode::Help),
+            // '?' => self.set_popup_mode(PopupMode::Help),
             'q' => self.quit = true,
             'e' => return self.export(Export { filename: None }),
             'd' | 'D' => {
@@ -178,12 +178,12 @@ impl App {
     }
 
     fn tab(&mut self) -> DotViewerResult<()> {
-        match &self.mode {
+        match self.mode {
             Mode::Normal => self.tabs.next(),
             Mode::Action | Mode::Selection => self.autocomplete_command(),
             Mode::Search(smode) => match smode {
-                SearchMode::Fuzzy => self.autocomplete_fuzzy(),
-                SearchMode::Regex => self.autocomplete_regex(),
+                SearchMode::Fuzzy { in_selection } => self.autocomplete_fuzzy(in_selection),
+                SearchMode::Regex { in_selection } => self.autocomplete_regex(in_selection),
             },
             _ => Err(DotViewerError::KeyError(KeyCode::Tab))?,
         };

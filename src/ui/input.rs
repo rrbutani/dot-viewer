@@ -14,8 +14,10 @@ pub(super) fn draw_input<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut Ap
         Mode::Normal => "Normal",
         Mode::Action => "Command",
         Mode::Search(smode) => match smode {
-            SearchMode::Fuzzy => "Fuzzy Search",
-            SearchMode::Regex => "Regex Search",
+            SearchMode::Fuzzy { in_selection: false } => "Fuzzy Search",
+            SearchMode::Fuzzy { in_selection: true } => "Fuzzy Search (In Selection)",
+            SearchMode::Regex { in_selection: false } => "Regex Search",
+            SearchMode::Regex { in_selection: true } => "Regex Search (In Selection)",
         },
         _ => unreachable!(),
     };

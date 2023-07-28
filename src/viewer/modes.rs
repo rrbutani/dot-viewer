@@ -24,7 +24,9 @@ pub(crate) enum PopupMode {
 /// In `SearchMode`, users can search for a node with,
 /// - fuzzy search against node ids, or
 /// - regex search against raw node representation in dot format.
+///
+/// `in_selection` limits the search to nodes in the current selection
 pub enum SearchMode {
-    Fuzzy,
-    Regex,
+    Fuzzy { in_selection: bool },
+    Regex { in_selection: bool },
 }

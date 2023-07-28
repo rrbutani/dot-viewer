@@ -101,8 +101,18 @@ impl fmt::Display for SelectionKind {
         use SelectionKind::*;
         match self {
             Search { kind, pattern } => match kind {
-                SearchMode::Fuzzy => write!(f, "search(~'{}')", pattern),
-                SearchMode::Regex => write!(f, "search(r/{}/)", pattern),
+                SearchMode::Fuzzy { in_selection } => write!(
+                    f,
+                    "search(~'{}'{})",
+                    pattern,
+                    if *in_selection { " in selection" } else { "" }
+                ),
+                SearchMode::Regex { in_selection } => write!(
+                    f,
+                    "search(r/{}/{})",
+                    pattern,
+                    if *in_selection { " in selection" } else { "" }
+                ),
             },
             Neighbors { center: node, depth }
             | Parents { bottom: node, depth }
