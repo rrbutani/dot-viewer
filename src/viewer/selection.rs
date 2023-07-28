@@ -2,7 +2,13 @@ use std::{borrow::Cow, fmt, iter, mem};
 
 use clap::Subcommand;
 use graphviz_rs::prelude::{GraphId, NodeId};
+use itertools::Itertools;
+use tui::{
+    style::{Color, Style},
+    text::{Span, Spans},
+};
 
+use crate::viewer::utils::styles::{ERR, VALID_NODE, HINT};
 
 use super::{
     modes::SearchMode,
@@ -413,7 +419,61 @@ pub fn command_table() -> SelectionCommandTable {
             }
         },
         /* validate hook */
-        None,
+        Some(Box::new(SelectionCommandTable::make_validate_hook_on_lexed(
+            |SelectionCommand { kind, .. }, inp, view: &View| {
+                // TODO: could highlight the first word different colors based
+                // on the op!
+                //
+                // probably would be a bit much though..
+
+                let mut extra = vec![];
+
+                use SelectionKind::*;
+                match &kind {
+                    Neighbors { center: Some(node), .. } |
+                    Parents { bottom: Some(node), .. } |
+                    Children { root: Some(node), .. } |
+                    Toggle { node } => {
+                        let idx = match kind {
+                            Neighbors { .. } | Parents { .. } | Children { .. } => 2,
+                            Toggle { .. } => 1,
+                            _ => unreachable!(),
+                        };
+
+                        let style = if view.graph.nodes().contains(node) { VALID_NODE } else {
+                            extra.push(Span::styled("  /* node doesn't exist! */", HINT));
+
+                            ERR
+                        };
+
+                        assert_eq!(inp[idx].content.as_ref(), node);
+                        inp[idx].style = style;
+                    },
+                    SubGraph { subgraph } => {
+                        let style = if view.graph.subgraphs().contains(subgraph) { VALID_NODE } else {
+                            extra.push(Span::styled("  /* subgraph does not exist! */", HINT));
+
+                            ERR
+                        };
+
+                        assert_eq!(inp[1].content.as_ref(), subgraph);
+                        inp[1].style = style;
+                    },
+
+                    // If no node is specified there's nothing to check:
+                    Neighbors { .. } | Parents { .. } | Children { .. } |
+                    // If we're here it's a real command; don't know anything
+                    // else about it:
+                    //
+                    // eventually we can let scripts provide a hook for this
+                    // (TODO)
+                    RegisteredCommand { .. } => { },
+                    Search { .. } => unreachable!(),
+                }
+
+                Some(extra)
+            },
+        ))),
     )
 }
 
