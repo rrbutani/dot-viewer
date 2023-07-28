@@ -893,6 +893,19 @@ impl View {
 
         format!("[{} / {} ({:.3}%)]", idx + 1, len, percentage)
     }
+
+    pub fn progress_selection(&self) -> (usize, usize, f32) {
+        let selected = self.selection.len();
+        let total = self.current.items.len();
+        let percentage = (selected as f32 / total as f32) * 100_f32;
+
+        // TODO
+        // "percent past cursor"? in the style of progress matches
+        // issue is that it's a tiny bit expensive to compute this without
+        // adding new state; not going to do it for now
+
+        (selected, total, percentage)
+    }
 }
 
 fn match_fuzzy(id: &str, key: &str, _graph: &Graph) -> Option<Vec<usize>> {

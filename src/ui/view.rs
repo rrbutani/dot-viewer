@@ -29,16 +29,24 @@ pub(super) fn draw_view<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut Vi
 }
 
 fn draw_left<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
-    if view.matches.items.is_empty() {
+    if view.matches.items.is_empty() && view.selection.is_empty() {
         draw_current(f, chunk, view);
     } else {
-        let chunks = Layout::default()
+        let [current, bottom] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(99), Constraint::Percentage(1)].as_ref())
-            .split(chunk);
+            .split(chunk)[..]
+        else { unreachable!() };
 
-        draw_current(f, chunks[0], view);
-        draw_match(f, chunks[1], view);
+        let [bottom_left, bottom_right] = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(bottom)[..]
+        else { unreachable!() };
+
+        draw_current(f, current, view);
+        draw_match(f, bottom_right, view);
+        draw_selected(f, bottom_left, view);
     }
 }
 
@@ -154,6 +162,21 @@ fn draw_current<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
 fn draw_match<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &View) {
     let title = if view.matches.items.is_empty() { String::new() } else { view.progress_matches() };
     let block = Block::default().title(title).title_alignment(Alignment::Right);
+
+    f.render_widget(block, chunk);
+}
+
+fn draw_selected<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &View) {
+    let title = if view.selection.is_empty() { Spans::default() } else {
+        let (selected, total, percentage) = view.progress_selection();
+        // format!("[{} of {} selected ({:.3}%)]", selected, total, percentage)
+        Spans::from(vec![
+            "[".into(),
+            Span::styled(format!("{selected}"), Style::default().fg(Color::Rgb(150, 255, 150))),
+            format!(" of {total} selected ({percentage:.3}%)]").into()
+        ])
+    };
+    let block = Block::default().title(title).title_alignment(Alignment::Left);
 
     f.render_widget(block, chunk);
 }
