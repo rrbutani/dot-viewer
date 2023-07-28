@@ -217,14 +217,6 @@ impl App {
             DuplicateTab(d) => self.duplicate(d).map(|_| Success::default()),
             RenameTab(r) => self.rename(r).map(|_| Success::default()),
             Filter(f) => self.filter(f).map(|_| Success::default()),
-            Help => {
-                self.set_popup_mode(PopupMode::Help);
-                Ok(Success::default())
-            }
-            Subgraph => {
-                self.set_popup_mode(PopupMode::Tree);
-                Ok(Success::default())
-            }
             Quit => {
                 self.quit = true;
                 Ok(Success::default())
@@ -233,6 +225,16 @@ impl App {
             Script {} => todo!(),
             RegisteredCommand { .. } => todo!(),
             LoadScript {} => todo!(),
+
+            // Do not re-enter normal mode for these:
+            Help => {
+                self.set_popup_mode(PopupMode::Help);
+                return Ok(Success::default());
+            }
+            Subgraph => {
+                self.set_popup_mode(PopupMode::Tree);
+                return Ok(Success::default());
+            }
         };
 
         if ret.is_err() || !ctrl_pressed {
