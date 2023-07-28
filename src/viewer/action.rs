@@ -203,8 +203,11 @@ pub struct Filter {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Args)]
 pub struct Xdot {
-    pub filename: Option<String>,
+    /// File to open in `xdot`. Defaults to `current.dot`, the file that `export`
+    #[arg(default_value_t = ToString::to_string("current.dot"))]
+    pub filename: String,
 }
+
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Args)]
 pub struct RenameTab {

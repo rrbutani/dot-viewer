@@ -417,12 +417,13 @@ impl App {
     pub fn xdot(&mut self, Xdot { filename }: Xdot) -> DotViewerResult<Success> {
         self.set_normal_mode();
 
-        let filename = filename.unwrap_or_else(|| "current.dot".to_string());
         let path = format!("./exports/{filename}");
 
-        if !std::path::Path::new("./exports/current.dot").exists() {
+        if !std::path::Path::new(&path).exists() {
             // TODO: fix error message; say you need to export first
-            return Err(DotViewerError::XdotError);
+            return Err(DotViewerError::XdotError(format!(
+                "file `{path}` does not exist! try `:export {filename}` first?",
+            )));
         }
 
         let xdot = std::process::Command::new("xdot")
@@ -431,7 +432,7 @@ impl App {
             .arg(&path)
             .spawn();
 
-        xdot.map(|_| Success::XdotSuccess).map_err(|_| DotViewerError::XdotError)
+        xdot.map(|_| Success::XdotSuccess).map_err(|e| DotViewerError::XdotError(format!("{e}")))
     }
 
     /// Extract a subgraph from the current view.

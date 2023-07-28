@@ -18,6 +18,6 @@ pub enum DotViewerError {
     KeyError(KeyCode),
     #[error(transparent)]
     IOError(#[from] std::io::Error),
-    #[error("Err: failed to launch xdot.py")]
-    XdotError,
+    #[error("Err: failed to launch xdot.py: {0}")]
+    XdotError(String),
 }
