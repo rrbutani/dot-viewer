@@ -4,33 +4,6 @@ use super::utils::{CommandTable, NoExtraSubcommands};
 
 use clap::{Args, Subcommand, ValueEnum};
 
-pub type ActionCommandTable = CommandTable<'static, ActionCommand, NoExtraSubcommands>;
-pub fn command_table() -> ActionCommandTable {
-    CommandTable::new_with_hooks(
-        |args| {
-            let in_place = args
-                .first_mut()
-                .map(|s| {
-                    if s.ends_with('!') {
-                        match s {
-                            Cow::Borrowed(s) => *s = s.strip_suffix('!').unwrap(),
-                            Cow::Owned(s) => assert_eq!(s.pop(), Some('!')),
-                        }
-
-                        true
-                    } else {
-                        false
-                    }
-                })
-                .unwrap_or(false);
-
-            if in_place {
-                args.push(Cow::Borrowed("--in-place"))
-            }
-        },
-        |_action, ()| {},
-    )
-}
 
 /// Commands triggered under `:`.
 ///
@@ -227,5 +200,34 @@ pub struct DuplicateTab {
     /// Name for the duplicated tab. Defaults to the name of the current tab if
     /// not specified.
     pub name: Option<String>,
+}
 
+////////////////////////////////////////////////////////////////////////////////
+
+pub type ActionCommandTable = CommandTable<'static, ActionCommand, NoExtraSubcommands, (), ActionCommand>;
+pub fn command_table() -> ActionCommandTable {
+    CommandTable::new_with_hooks(
+        |args| {
+            let in_place = args
+                .first_mut()
+                .map(|s| {
+                    if s.ends_with('!') {
+                        match s {
+                            Cow::Borrowed(s) => *s = s.strip_suffix('!').unwrap(),
+                            Cow::Owned(s) => assert_eq!(s.pop(), Some('!')),
+                        }
+
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+
+            if in_place {
+                args.push(Cow::Borrowed("--in-place"))
+            }
+        },
+        |action, ()| action,
+    )
 }

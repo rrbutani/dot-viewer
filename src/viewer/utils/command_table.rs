@@ -8,12 +8,21 @@ use std::{
 
 use clap::{Command, FromArgMatches, Subcommand};
 use thiserror::Error;
+use tui::{
+    style::{Modifier, Style},
+    text::{Span, Spans},
+};
 
 use super::trie::Trie;
 
 #[allow(clippy::type_complexity)]
-pub struct CommandTable<'f, CommandEnum: Subcommand, Extra: ExtraSubcommands<CommandEnum>, Ctx = ()>
-{
+pub struct CommandTable<
+    'f,
+    CommandEnum: Subcommand,
+    Extra: ExtraSubcommands<CommandEnum>,
+    Ctx = (),
+    Ret = CommandEnum,
+> {
     _out: PhantomData<CommandEnum>,
     extra: Vec<Extra>,
     cmd: Command,
@@ -25,7 +34,7 @@ pub struct CommandTable<'f, CommandEnum: Subcommand, Extra: ExtraSubcommands<Com
     trie: Trie,
 
     pre_parse_hook: Box<dyn Fn(&mut Vec<Cow<str>>) -> Ctx + 'f>,
-    post_parse_hook: Box<dyn Fn(&mut CommandEnum, Ctx) + 'f>,
+    post_parse_hook: Box<dyn Fn(CommandEnum, Ctx) -> Ret + 'f>,
 }
 
 /// Trait for types providing extra subcommands to extend `CommandEnum`.
@@ -80,10 +89,12 @@ impl<Base: Subcommand, Extra: ExtraSubcommands<Base>> CommandTable<'_, Base, Ext
     }
 }
 
-impl<'f, Base: Subcommand, Extra: ExtraSubcommands<Base>, Ctx> CommandTable<'f, Base, Extra, Ctx> {
+impl<'f, Base: Subcommand, Extra: ExtraSubcommands<Base>, Ctx, Ret>
+    CommandTable<'f, Base, Extra, Ctx, Ret>
+{
     pub fn new_with_hooks(
         pre: impl Fn(&mut Vec<Cow<str>>) -> Ctx + 'f,
-        post: impl Fn(&mut Base, Ctx) + 'f,
+        post: impl Fn(Base, Ctx) -> Ret + 'f,
     ) -> Self {
         let cmd = Command::new("dot-viewer subcommand")
             // tell `clap` not to "ignore" the first arg; for actual arg parsing
@@ -161,8 +172,8 @@ impl<'f, Base: Subcommand, Extra: ExtraSubcommands<Base>, Ctx> CommandTable<'f, 
     }
 }
 
-impl<B: Subcommand, E: ExtraSubcommands<B>, C> CommandTable<'_, B, E, C> {
-    pub fn parse(&self, input: &str, allow_prefix_match: bool) -> Result<B, clap::Error> {
+impl<B: Subcommand, E: ExtraSubcommands<B>, C, R> CommandTable<'_, B, E, C, R> {
+    pub fn parse(&self, input: &str, allow_prefix_match: bool) -> Result<R, clap::Error> {
         let mut inputs: Vec<Cow<str>> = input.split_whitespace().map(Cow::Borrowed).collect();
         let ctx = (self.pre_parse_hook)(&mut inputs);
 
@@ -185,16 +196,18 @@ impl<B: Subcommand, E: ExtraSubcommands<B>, C> CommandTable<'_, B, E, C> {
                         .map(|p| p[0].clone())
                     {
                         inputs[0] = Cow::Owned(unambiguous_prefix_match);
-                        return self.parse_tokenized(&inputs);
+                        self.parse_tokenized(&inputs)?
+                    } else {
+                        return Err(e);
                     }
+                } else {
+                    return Err(e);
                 }
-
-                return Err(e);
             }
         };
 
-        (self.post_parse_hook)(&mut cmd, ctx);
-        Ok(cmd)
+        let ret = (self.post_parse_hook)(cmd, ctx);
+        Ok(ret)
     }
 
     fn parse_tokenized(&self, inputs: &[Cow<str>]) -> Result<B, clap::Error> {

@@ -1,8 +1,13 @@
 use std::{fmt, iter, mem};
 
+use clap::Subcommand;
 use graphviz_rs::prelude::{GraphId, NodeId};
 
-use super::modes::SearchMode;
+
+use super::{
+    modes::SearchMode,
+    utils::{CommandTable, NoExtraSubcommands},
+};
 
 /// Represents the stack of operations leading to the current selection.
 ///
@@ -281,6 +286,23 @@ pub struct SelectionCommand {
     /// `None` = clear previous selection
     op: Option<SelectionOp>,
     kind: SelectionKind,
+}
+
+pub type SelectionCommandTable = CommandTable<
+    'static,
+    SelectionKind,
+    NoExtraSubcommands,
+    Option<SelectionOp>,
+    SelectionCommand,
+>;
+pub fn command_table() -> SelectionCommandTable {
+    SelectionCommandTable::new_with_hooks(
+        /* pre parse hook */
+        |args| {
+          todo!()
+        },
+        /* post parse hook */ |kind, op| SelectionCommand { op, kind },
+    )
 }
 
 // TODO: we _could_ be smart about eliding operations that didn't change the
