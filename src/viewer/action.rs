@@ -1,9 +1,11 @@
 use std::borrow::Cow;
 
+use crate::viewer::{utils::styles::{VALID_NODE, HINT, ERR, VALID_SUBGRAPH}, app::valid_filename};
 
 use super::{utils::{CommandTable, NoExtraSubcommands}, View};
 
 use clap::{Args, Subcommand, ValueEnum};
+use tui::{text::Span, style::Color};
 
 /// Commands triggered under `:`.
 ///
@@ -245,6 +247,89 @@ pub fn command_table() -> ActionCommandTable {
         },
         |_cmd, _inp, _auto_ctx| None, // autocomplete hook; not really applicable
         // validation hook:
-        None,
+        Some(Box::new(ActionCommandTable::make_validate_hook_on_lexed(|cmd, inp, view: &View| {
+            let mut extra = vec![];
+
+            use ActionCommand as A;
+            match &cmd {
+                A::MakeStub(MakeStub { name: node, .. }) => {
+                    let style = if view.graph.nodes().contains(node) {
+                        extra.push(Span::styled("  /* node already exists! */ ", HINT));
+
+                        ERR
+                    } else { VALID_NODE };
+
+                    let idx = 1;
+                    assert_eq!(inp[idx].content.as_ref(), node);
+                    inp[idx].style = style;
+                },
+                A::MakeSubgraph(MakeSubgraph { name: subgraph, .. }) => {
+                    let style = if view.graph.subgraphs().contains(subgraph) {
+                        extra.push(Span::styled("  /* subgraph already exists! */", HINT));
+
+                        ERR
+                    } else { VALID_SUBGRAPH };
+
+                    let idx = 1;
+                    assert_eq!(inp[idx].content.as_ref(), subgraph);
+                    inp[idx].style = style;
+                },
+
+                // Only invalid if the query yields no nodes but we won't check
+                // for that here (could be expensive).
+                A::Children(_) | A::Parents(_) | A::Neighbors(_) => { },
+
+                // Warn if selection is empty:
+                A::Filter(_) => {
+                    if view.selection.is_empty() {
+                        extra.push(Span::styled("  /* selection is empty */", ERR))
+                    }
+                },
+
+                // check for filename validity
+                A::Export(Export { filename: Some(filename) }) |
+                A::Xdot(Xdot { filename }) => {
+                    if !valid_filename(filename) {
+                        assert_eq!(inp[1].content.as_ref(), filename);
+                        inp[1].style = ERR;
+
+                        extra.push(Span::styled("  /* invalid filename! */", HINT));
+                    }
+                },
+                // Check the tab's name for validity? nah
+                A::Export(Export { filename: None }) => { },
+
+                // TODO: provide visual feedback? (about whether the remove will
+                // succeed)
+                // gated on the guy being small..
+                A::RemoveSelection(Remove { config, .. }) => if view.selection.len() <= 50 {
+                    let selection = view.selection_as_node_ids();
+                    match view.remove(selection, *config, None::<&'static str>) {
+                        Err((_, Some(problematic_node))) => extra.push(
+                            Span::styled(format!("  /* node `{problematic_node}` is in the way */"), HINT)
+                        ),
+                        Err((e, None)) => extra.push(
+                            Span::styled(format!("  /* error: {e} */"), HINT)
+                        ),
+                        Ok(view) => extra.extend([
+                            Span::styled("  /*", HINT),
+                            Span::styled(" ✓  ", HINT.fg(Color::Green)),
+                            Span::styled(format!("success! yields {} nodes, {} edges */ ", view.graph.nodes_len(), view.graph.edges_len()), HINT),
+                        ]),
+                    }
+                },
+
+                // Always succeeds:
+                A::RenameTab(_) | A::DuplicateTab(_) => { },
+                A::Help | A::Subgraph | A::Quit => { },
+
+                // unimpl
+                A::Script {  } => todo!(),
+                A::RegisteredCommand { .. } => todo!(),
+                A::LoadScript {  } => todo!(),
+            }
+
+            Some(extra)
+        }))),
     )
 }
