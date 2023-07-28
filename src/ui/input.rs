@@ -56,7 +56,10 @@ fn draw_result<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App) {
 fn draw_form<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App) {
     use Mode::*;
 
-    let input = Paragraph::new(app.input.key.clone());
+    let input = match app.mode {
+        Action | Selection => Paragraph::new(app.validate_command(&app.input.key).unwrap()),
+        _ => Paragraph::new(app.input.key.clone()),
+    };
 
     let style = match app.mode {
         Normal => Style::default(),

@@ -46,6 +46,14 @@ pub struct CommandTable<
     // Runs after `post_parse_hook`.
     successful_parse_autocomplete_hook:
         Box<dyn Fn(Ret, Vec<Cow<str>>, &AutocompleteCtx) -> Option<String> + 'f>,
+
+    // By default validation assumes that if parse succeeds the subcommand is
+    // good.
+    //
+    // This hook allows you to provide feedback on successfully parsed
+    // subcommands that may still be otherwise "incorrect" (i.e. paths that
+    // don't exist).
+    validation_hook: Box<dyn for<'i> Fn(Ret, &'i str, &AutocompleteCtx) -> Spans<'i> + 'f>,
 }
 
 /// Trait for types providing extra subcommands to extend `CommandEnum`.
@@ -103,6 +111,7 @@ impl<Base: Subcommand, Extra: ExtraSubcommands<Base>, AutoCtx>
             |arg, _ctx| arg,
             |_ctx, _inp| {},
             |_cmd, _inp, _auto_ctx| None,
+            None,
         )
     }
 }
@@ -115,6 +124,7 @@ impl<'f, Base: Subcommand, Extra: ExtraSubcommands<Base>, Ctx, Ret, AutoCtx>
         post: impl Fn(Base, Ctx) -> Ret + 'f,
         post_autocomplete: impl Fn(Ctx, &mut Vec<Cow<str>>) + 'f,
         success_autocomplete: impl Fn(Ret, Vec<Cow<str>>, &AutoCtx) -> Option<String> + 'f,
+        validation_hook: Option<Box<dyn for<'i> Fn(Ret, &'i str, &AutoCtx) -> Spans<'i> + 'f>>,
     ) -> Self {
         let cmd = Command::new("dot-viewer subcommand")
             // tell `clap` not to "ignore" the first arg; for actual arg parsing
@@ -145,6 +155,9 @@ impl<'f, Base: Subcommand, Extra: ExtraSubcommands<Base>, Ctx, Ret, AutoCtx>
             post_parse_hook: Box::new(post),
             post_autocomplete_hook: Box::new(post_autocomplete),
             successful_parse_autocomplete_hook: Box::new(success_autocomplete),
+            validation_hook: validation_hook.unwrap_or_else(|| {
+                Box::new(|_cmd, inp: &str, _auto_ctx| Spans::from(vec![Span::raw(inp)]))
+            }),
         }
     }
 
@@ -296,8 +309,26 @@ impl<B: Subcommand, E: ExtraSubcommands<B>, C, R, A> CommandTable<'_, B, E, C, R
             Ok(cmd) => {
                 let Some(auto_ctx) = autocomplete_ctx else { return None };
 
+                // Note: whitespace is normalized!
                 let inputs: Vec<Cow<str>> = input.split_whitespace().map(Cow::Borrowed).collect();
                 (self.successful_parse_autocomplete_hook)(cmd, inputs, auto_ctx)
+            }
+        }
+    }
+
+    pub fn validate<'i>(&self, input: &'i str, autocomplete_ctx: &A) -> Spans<'i> {
+        // TODO: clean up!
+        match self.parse(input, true) {
+            Err(_) => {
+               todo!()
+            }
+            Ok(cmd) => {
+                // TODO: verify that beneath the styles the text is the same?
+                // actually, nah
+                //
+                // probably should check that the prefix is the same...
+
+                (self.validation_hook)(cmd, input, autocomplete_ctx)
             }
         }
     }

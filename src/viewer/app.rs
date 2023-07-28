@@ -15,6 +15,7 @@ use crate::viewer::{
 use std::{fs, io, ops::Not, path::Path};
 
 use graphviz_rs::prelude::*;
+use tui::text::Spans;
 
 /// `App` holds `dot-viewer` application states.
 ///
@@ -174,6 +175,15 @@ impl App {
         if let Some(cmd) = suggestion {
             self.input.set(cmd);
         }
+    }
+
+    pub fn validate_command<'i>(&self, input: &'i str) -> Option<Spans<'i>> {
+        let view = self.tabs.selected();
+        Some(match self.mode {
+            Mode::Action => self.action_cmds.validate(input, view),
+            Mode::Selection => self.selection_cmds.validate(input, view),
+            _ => return None,
+        })
     }
 
     /// Parse and execute dot-viewer command

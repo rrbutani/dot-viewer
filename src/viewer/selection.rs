@@ -412,6 +412,8 @@ pub fn command_table() -> SelectionCommandTable {
                 Search { .. } => unreachable!(),
             }
         },
+        /* validate hook */
+        None,
     )
 }
 

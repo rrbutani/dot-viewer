@@ -244,5 +244,7 @@ pub fn command_table() -> ActionCommandTable {
             }
         },
         |_cmd, _inp, _auto_ctx| None, // autocomplete hook; not really applicable
+        // validation hook:
+        None,
     )
 }
