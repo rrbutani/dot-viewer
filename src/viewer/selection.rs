@@ -64,14 +64,58 @@ pub enum SelectionOp {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Subcommand)]
 #[warn(clippy::missing_docs_in_private_items)]
 pub enum SelectionKind {
-    Search { kind: SearchMode, pattern: String },
-    Neighbors { center: NodeId, depth: Option<usize> },
-    Parents { bottom: NodeId, depth: Option<usize> },
-    Children { root: NodeId, depth: Option<usize> },
-    SubGraph { subgraph: GraphId },
-    Toggle { node: NodeId },
+    Neighbors {
+        depth: Option<usize>, // TODO: allow saying just "max" for this..
+        center: Option<NodeId>,
+    },
+    Parents {
+        depth: Option<usize>,
+        bottom: Option<NodeId>,
+    },
+    Children {
+        depth: Option<usize>,
+        root: Option<NodeId>,
+    },
+    #[clap(name = "subgraph")]
+    SubGraph {
+        subgraph: GraphId,
+    },
+    Toggle {
+        node: NodeId,
+    },
     // Script {/* ... path */},
+
+    // For recordkeeping (`SelectionInfo`); not meant to be a command.
+    #[clap(skip)]
+    Search {
+        kind: SearchMode,
+        pattern: String,
+    },
+
+    #[clap(skip)]
+    RegisteredCommand {
+        name: String,
+        script: String,
+    },
 }
+
+// struct OptionalDepthParser;
+// impl TypedValueParser for OptionalDepthParser {
+//     // type Value = Option<
+
+//     fn parse_ref(
+//         &self,
+//         cmd: &crate::Command,
+//         arg: Option<&crate::Arg>,
+//         value: &std::ffi::OsStr,
+//     ) -> Result<Self::Value, clap::Error> {
+
+//         let x = clap::value_parser!(usize);
+
+//         todo!()
+
+//     }
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -133,14 +177,15 @@ impl fmt::Display for SelectionKind {
                 };
 
                 if let Some(depth) = depth {
-                    write!(f, "{op}({node}, {depth})")
+                    write!(f, "{op}({node}, {depth})", node = node.as_ref().unwrap())
                 } else {
-                    write!(f, "{op}({node})")
+                    write!(f, "{op}({node})", node = node.as_ref().unwrap())
                 }
             }
             SubGraph { subgraph } => write!(f, "subgraph({subgraph})"),
             Toggle { node } => write!(f, "{{ {node} }}"),
             // Script {} => todo!(),
+            RegisteredCommand { name, .. } => write!(f, "script-command({name})"),
         }
     }
 }
@@ -280,9 +325,8 @@ impl SelectionInfo {
 
 // need special handling for `clear`!
 
-// Note: bail after `N` operations when stringify-ing
-
 /// Commands that modify the current selection.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SelectionCommand {
     /// `None` = clear previous selection
     op: Option<SelectionOp>,

@@ -6,6 +6,7 @@ use crate::viewer::{
     error::{DotViewerError, DotViewerResult},
     help,
     modes::{Mode, PopupMode, SearchMode},
+    selection::{self, SelectionCommandTable},
     success::Success,
     utils::{Input, List, Table, Tabs},
     view::View,
@@ -38,6 +39,9 @@ pub(crate) struct App {
     /// Action commands
     pub action_cmds: ActionCommandTable,
 
+    /// Selection commands
+    pub selection_cmds: SelectionCommandTable,
+
     /// Keybinding helps
     pub help: Table, // TODO: remove, fix
 }
@@ -59,10 +63,11 @@ impl App {
         let input = Input::default();
 
         let action_cmds = action::command_table();
+        let selection_cmds = selection::command_table();
 
         let help = Table::new(help::HEADER, help::ROWS);
 
-        Ok(Self { quit, mode, result, tabs, input, action_cmds, help })
+        Ok(Self { quit, mode, result, tabs, input, action_cmds, selection_cmds, help })
     }
 
     /// Navigate to the next match.

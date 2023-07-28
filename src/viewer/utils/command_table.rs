@@ -357,4 +357,10 @@ mod test_command_parse {
 
     #[test]
     fn empty_with_in_place() {}
+
+    // test that `neigh 0239r48 ofi` autocompletes to `neightbours 0239r48 ofi`;
+    // i.e. make sure that we still do autocomplete for the first word in the
+    // precesence of other args
+    //
+    // this is the "partial in place" test but for autocomplete
 }

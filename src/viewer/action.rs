@@ -13,8 +13,6 @@ use clap::{Args, Subcommand, ValueEnum};
 /// producing a new tab.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Subcommand)]
 pub enum ActionCommand {
-    // TODO: run script?
-    // fold leaves? -- nah, a job for script
     /// Replaces the current selection with a new node, rewriting edges to
     /// match.
     ///
