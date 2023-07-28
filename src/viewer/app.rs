@@ -103,6 +103,18 @@ impl App {
         self.tabs.selected_mut().scroll_by_page(false)
     }
 
+    /// Attempts to move the focus to the next element in the selection.
+    pub fn goto_next_in_selection(&mut self) -> DotViewerResult<()> {
+        let view = self.tabs.selected_mut();
+        view.goto_selection_next()
+    }
+
+    /// Attempts to move the focus to the previous element in the selection.
+    pub fn goto_prev_in_selection(&mut self) -> DotViewerResult<()> {
+        let view = self.tabs.selected_mut();
+        view.goto_selection_prev()
+    }
+
     /// Update search matches with trie.
     pub fn update_search(&mut self) {
         match self.mode {

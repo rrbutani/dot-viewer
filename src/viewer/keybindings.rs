@@ -65,6 +65,8 @@ impl App {
             'b' => self.up_page()?,
             'n' => self.goto_next_match()?,
             'N' => self.goto_prev_match()?,
+            '[' => self.goto_prev_in_selection()?,
+            ']' => self.goto_next_in_selection()?,
             // layering violations:
             ' ' => self.tabs.selected_mut().enter()?,
             '?' => self.set_popup_mode(PopupMode::Help),
