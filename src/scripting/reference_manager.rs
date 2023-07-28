@@ -4,7 +4,6 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-
 // Raw access to the internal reference inside `Ref` can cause unsafety so we
 // put `Ref`'s definition in an inner module so that it's easier to verify that
 // `Ref`'s accessors uphold invariants.
@@ -48,7 +47,9 @@ mod inner {
             Self(r, witness)
         }
 
-        pub fn get_witness_copy(&self) -> Option<Witness> { self.1.clone() }
+        pub fn get_witness_copy(&self) -> Option<Witness> {
+            self.1.clone()
+        }
 
         // helper function to wrap newly created references in a new `Ref` with
         // a new witness
@@ -77,8 +78,9 @@ mod inner {
             self.0 = r;
         }
 
-        /// Safety: caller must not allow this to go anywhere where it's not
-        /// guarded by a witness!
+        /// # Safety
+        /// Caller must not allow this to go anywhere where it's not guarded by
+        /// a witness!
         ///
         /// Unfortunately this is required for some uses that want to manipulate
         /// `self.0` (i.e. [`split_at`](slice::split_at)) and need a reference
@@ -91,7 +93,6 @@ mod inner {
         pub unsafe fn into_parts(self) -> (&'a T, Option<Witness>) {
             (self.0, self.1)
         }
-
     }
 
     // This would be unsound! Yields a bare reference not guarded by a new
@@ -121,21 +122,29 @@ mod inner {
             Self(r, witness)
         }
 
-        pub fn get_witness_copy(&self) -> Option<Witness> { self.1.clone() }
+        pub fn get_witness_copy(&self) -> Option<Witness> {
+            self.1.clone()
+        }
 
         // see `Ref::get`
         #[allow(clippy::needless_lifetimes)]
-        pub fn get<'b>(&'b self) -> &'b T { & *self.0 }
+        pub fn get<'b>(&'b self) -> &'b T {
+            &*self.0
+        }
 
         // TODO: is this okay? what happens if you do `mem::swap`?
         //
         // answer: yes; it's still fine; you can only get a reference to `&'b
         // mut T` not `&'a mut B`.
         #[allow(clippy::needless_lifetimes)]
-        pub fn get_mut<'b>(&'b mut self) -> &'b mut T { &mut *self.0 }
+        pub fn get_mut<'b>(&'b mut self) -> &'b mut T {
+            &mut *self.0
+        }
 
         // see `Ref::set`
-        pub fn set(&mut self, r: &'a mut T) { self.0 = r; }
+        pub fn set(&mut self, r: &'a mut T) {
+            self.0 = r;
+        }
 
         // TODO: I think this is safe?
         pub fn into_shared_reference(self) -> Ref<'a, T> {
@@ -175,23 +184,32 @@ mod inner {
         }
     }
 
+    #[allow(clippy::needless_lifetimes)]
     impl<T> Owned<T> {
         pub fn new(val: T, witness: Option<Witness>) -> Self {
             Self(val, witness)
         }
 
-        pub fn get_witness_copy(&self) -> Option<Witness> { self.1.clone() }
+        pub fn get_witness_copy(&self) -> Option<Witness> {
+            self.1.clone()
+        }
 
         // these are unsafe because you can then use the reference to `T` to
         // invoke methods that yield references to inner borrowed data...
         //
         // when using these you have to promise that you have ensured no inner
         // borrowed data can escape
-        pub unsafe fn get<'b>(&'b self) -> &'b T { &self.0 }
-        pub unsafe fn get_mut<'b>(&'b mut self) -> &'b mut T { &mut self.0 }
+        pub unsafe fn get<'b>(&'b self) -> &'b T {
+            &self.0
+        }
+        pub unsafe fn get_mut<'b>(&'b mut self) -> &'b mut T {
+            &mut self.0
+        }
 
         // safe
-        pub fn set(&mut self, r: T) { self.0 = r; }
+        pub fn set(&mut self, r: T) {
+            self.0 = r;
+        }
 
         pub unsafe fn into_parts(self) -> (T, Option<Witness>) {
             (self.0, self.1)
@@ -199,7 +217,7 @@ mod inner {
     }
 }
 
-pub use inner::{Ref, RefMut, Owned};
+pub use inner::{Owned, Ref, RefMut};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -242,7 +260,7 @@ impl<'a, T: ?Sized + PartialEq<R>, R: ?Sized> PartialEq<T> for Ref<'a, T> {
 }
 */
 
-impl<'a, T: ?Sized + Eq> Eq for Ref<'a, T> { }
+impl<'a, T: ?Sized + Eq> Eq for Ref<'a, T> {}
 
 impl<'a, T: ?Sized + Hash> Hash for Ref<'a, T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -334,7 +352,7 @@ impl<'a, T: ?Sized + PartialEq<R>, R> PartialEq<Owned<R>> for RefMut<'a, T> {
 }
 */
 
-impl<'a, T: ?Sized + Eq> Eq for RefMut<'a, T> { }
+impl<'a, T: ?Sized + Eq> Eq for RefMut<'a, T> {}
 
 impl<'a, T: ?Sized + Hash> Hash for RefMut<'a, T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -380,8 +398,8 @@ impl<'a, T: ?Sized + Iterator> Iterator for RefMut<'a, T> {
         self.get().size_hint()
     }
 }
-impl<'a, T: ?Sized + ExactSizeIterator> ExactSizeIterator for RefMut<'a, T> { }
-impl<'a, T: ?Sized + FusedIterator> FusedIterator for RefMut<'a, T> { }
+impl<'a, T: ?Sized + ExactSizeIterator> ExactSizeIterator for RefMut<'a, T> {}
+impl<'a, T: ?Sized + FusedIterator> FusedIterator for RefMut<'a, T> {}
 impl<'a, T: ?Sized + DoubleEndedIterator> DoubleEndedIterator for RefMut<'a, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.get_mut().next_back()
@@ -400,7 +418,9 @@ impl<'a, T: ?Sized + DoubleEndedIterator> DoubleEndedIterator for RefMut<'a, T> 
 impl<T: FullyOwnedType> Deref for Owned<T> {
     type Target = T;
 
-    fn deref(&self) -> &Self::Target { unsafe { self.get() } }
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.get() }
+    }
 }
 
 impl<T: FullyOwnedType + PartialEq<R>, R: FullyOwnedType> PartialEq<Owned<R>> for Owned<T> {
@@ -408,18 +428,22 @@ impl<T: FullyOwnedType + PartialEq<R>, R: FullyOwnedType> PartialEq<Owned<R>> fo
         T::eq(unsafe { self.get() }, unsafe { other.get() })
     }
 }
-impl<'a, T: FullyOwnedType + PartialEq<R>, R: FullyOwnedType + ?Sized> PartialEq<Ref<'a, R>> for Owned<T> {
+impl<'a, T: FullyOwnedType + PartialEq<R>, R: FullyOwnedType + ?Sized> PartialEq<Ref<'a, R>>
+    for Owned<T>
+{
     fn eq(&self, other: &Ref<'a, R>) -> bool {
         T::eq(unsafe { self.get() }, other.get())
     }
 }
-impl<'a, T: FullyOwnedType + PartialEq<R>, R: FullyOwnedType + ?Sized> PartialEq<RefMut<'a, R>> for Owned<T> {
+impl<'a, T: FullyOwnedType + PartialEq<R>, R: FullyOwnedType + ?Sized> PartialEq<RefMut<'a, R>>
+    for Owned<T>
+{
     fn eq(&self, other: &RefMut<'a, R>) -> bool {
         T::eq(unsafe { self.get() }, other.get())
     }
 }
 
-impl<T: FullyOwnedType + Eq> Eq for Owned<T> { }
+impl<T: FullyOwnedType + Eq> Eq for Owned<T> {}
 
 impl<T: FullyOwnedType + Hash> Hash for Owned<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -449,8 +473,8 @@ impl<T: Iterator> Iterator for Owned<T> {
         unsafe { self.get() }.size_hint()
     }
 }
-impl<T: ExactSizeIterator> ExactSizeIterator for Owned<T> { }
-impl<T: FusedIterator> FusedIterator for Owned<T> { }
+impl<T: ExactSizeIterator> ExactSizeIterator for Owned<T> {}
+impl<T: FusedIterator> FusedIterator for Owned<T> {}
 impl<T: DoubleEndedIterator> DoubleEndedIterator for Owned<T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         // TODO: unsafe
@@ -462,10 +486,12 @@ impl<T: DoubleEndedIterator> DoubleEndedIterator for Owned<T> {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[doc(hidden)]
-pub trait FullyOwnedType: 'static + sealed::Private { }
-impl<T: sealed::Private> FullyOwnedType for T { }
+pub trait FullyOwnedType: 'static + sealed::Private {}
+impl<T: sealed::Private> FullyOwnedType for T {}
 
-mod sealed { pub trait Private: 'static {} }
+mod sealed {
+    pub trait Private: 'static {}
+}
 
 // escape hatch for `Owned` (aka `Opaque`) for types that definitely do not
 // borrow any external data that they don't manage themselves
@@ -501,6 +527,7 @@ macro_rules! fully_owned_tuples {
 }
 
 mod exemptions {
+    use super::{sealed, FullyOwnedType};
     use std::{
         cell::{Cell, RefCell},
         collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList},
@@ -509,7 +536,6 @@ mod exemptions {
         rc::Rc,
         sync::{Arc, Mutex, RwLock},
     };
-    use super::{sealed, FullyOwnedType};
 
     fully_owned_types! {
         ()
@@ -535,10 +561,10 @@ mod exemptions {
 
     fully_owned_tuples!( A B C D E F G H I J K );
 
-    impl<T: FullyOwnedType> sealed::Private for *const T { }
-    impl<T: FullyOwnedType> sealed::Private for *mut T { }
+    impl<T: FullyOwnedType> sealed::Private for *const T {}
+    impl<T: FullyOwnedType> sealed::Private for *mut T {}
 
-    impl<const N: usize, T: FullyOwnedType> sealed::Private for [T; N] { }
+    impl<const N: usize, T: FullyOwnedType> sealed::Private for [T; N] {}
 }
 
 impl<T: FullyOwnedType> Owned<T> {
@@ -684,7 +710,6 @@ mod tests {
 
     use rhai::{Dynamic, INT};
 
-
     #[test]
     #[should_panic = "array still has 1 live reference"]
     fn test_reference_guard_simple() {
@@ -713,21 +738,27 @@ mod tests {
 
         ReferenceManager::scope(|r| {
             let array_ref: ArrayRef<'static, _> = r.make_checked_reference(&array, Some("array"));
-            let array_ref2: ArrayRef<'static, _> = r.make_checked_reference(&array2, Some("array2"));
+            let array_ref2: ArrayRef<'static, _> =
+                r.make_checked_reference(&array2, Some("array2"));
 
             // under real use we'd probably clone the scope or roll it back in a
             // more rigorous way
             scope.push("a", array_ref);
             scope.push("b", array_ref2);
 
-            engine.run_with_scope(&mut scope, "
+            engine
+                .run_with_scope(
+                    &mut scope,
+                    "
                 array = a;
                 array2 = b;
 
                 let foo = a;
                 let bar = a;
                 let baz = a;
-            ").unwrap();
+            ",
+                )
+                .unwrap();
 
             // 5 live references for a
 
@@ -743,7 +774,6 @@ mod tests {
 
             // TODO: we can actually go hunting through the scope for stuff, programmatically..
             // types are tricky though
-
 
             // scope.remove::<ArrayRef<'static, INT>>("foo").unwrap();
             // scope.remove::<ArrayRef<'static, INT>>("bar").unwrap();

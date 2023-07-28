@@ -68,8 +68,7 @@ fn run<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<()> {
             // Do not redraw unless we get a key event or a window resize event.
             match event::read()? {
                 Event::Key(key) => app.key(key),
-                Event::Resize(_, _) => {},
-
+                Event::Resize(_, _) => {}
 
                 Event::FocusGained | Event::FocusLost | Event::Mouse(_) | Event::Paste(_) => {
                     continue;

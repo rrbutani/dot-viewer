@@ -102,7 +102,9 @@ fn draw_current<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
         .enumerate()
         .map(|(idx, id)| {
             // See above.
-            if !range.contains(&idx) { return blank.clone(); }
+            if !range.contains(&idx) {
+                return blank.clone();
+            }
 
             let mut spans = Vec::with_capacity(id.len() + 2);
 
@@ -167,13 +169,15 @@ fn draw_match<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &View) {
 }
 
 fn draw_selected<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &View) {
-    let title = if view.selection.is_empty() { Spans::default() } else {
+    let title = if view.selection.is_empty() {
+        Spans::default()
+    } else {
         let (selected, total, percentage) = view.progress_selection();
         // format!("[{} of {} selected ({:.3}%)]", selected, total, percentage)
         Spans::from(vec![
             "[".into(),
             Span::styled(format!("{selected}"), Style::default().fg(Color::Rgb(150, 255, 150))),
-            format!(" of {total} selected ({percentage:.3}%)]").into()
+            format!(" of {total} selected ({percentage:.3}%)]").into(),
         ])
     };
     let block = Block::default().title(title).title_alignment(Alignment::Left);

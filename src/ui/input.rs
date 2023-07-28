@@ -73,7 +73,9 @@ fn draw_form<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App) {
     // cursor
     match &app.mode {
         Mode::Normal => {}
-        Mode::Action | Mode::Selection | Mode::Search(_) => f.set_cursor(chunk.x + app.input.cursor as u16, chunk.y),
+        Mode::Action | Mode::Selection | Mode::Search(_) => {
+            f.set_cursor(chunk.x + app.input.cursor as u16, chunk.y)
+        }
         _ => unreachable!(),
     }
 }

@@ -147,7 +147,7 @@ impl App {
         }
     }
 
-    fn char_selection_stack_popup(&mut self, c: char) -> DotViewerResult<()> {
+    fn char_selection_stack_popup(&mut self, _c: char) -> DotViewerResult<()> {
         todo!()
     }
 

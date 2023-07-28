@@ -2,13 +2,9 @@ use std::{borrow::Cow, fmt, iter, mem};
 
 use clap::Subcommand;
 use graphviz_rs::prelude::{GraphId, NodeId};
-use itertools::Itertools;
-use tui::{
-    style::{Color, Style},
-    text::{Span, Spans},
-};
+use tui::text::Span;
 
-use crate::viewer::utils::styles::{ERR, VALID_NODE, HINT};
+use crate::viewer::utils::styles::{ERR, HINT, VALID_NODE};
 
 use super::{
     modes::SearchMode,
@@ -104,24 +100,6 @@ pub enum SelectionKind {
         script: String,
     },
 }
-
-// struct OptionalDepthParser;
-// impl TypedValueParser for OptionalDepthParser {
-//     // type Value = Option<
-
-//     fn parse_ref(
-//         &self,
-//         cmd: &crate::Command,
-//         arg: Option<&crate::Arg>,
-//         value: &std::ffi::OsStr,
-//     ) -> Result<Self::Value, clap::Error> {
-
-//         let x = clap::value_parser!(usize);
-
-//         todo!()
-
-//     }
-// }
 
 ////////////////////////////////////////////////////////////////////////////////
 

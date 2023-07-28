@@ -7,7 +7,7 @@ use rhai::{
     Array, CustomType, Dynamic, EvalAltResult, FnPtr, ImmutableString, NativeCallContext, INT,
 };
 
-use super::{Owned, Ref, RefMut, RhaiResult};
+use super::{Ref, RhaiResult};
 
 pub type ArrayRef<'r, T> = Ref<'r, [T]>;
 
@@ -581,7 +581,9 @@ mod tests {
 
     use ComparableDynamic as D;
     #[allow(non_snake_case)]
-    fn R<T>(val: &'static T) -> Ref<'static, T> { Ref::new(val, None) }
+    fn R<T>(val: &'static T) -> Ref<'static, T> {
+        Ref::new(val, None)
+    }
 
     test!(roundtrip: [123] => "arr" == ArrayRef::from(&[123]));
     test!(compare_array: [123] => "[1, 2, 3]" as (Array) == D([1 as INT, 2, 3]));

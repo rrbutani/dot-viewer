@@ -73,7 +73,6 @@ pub(crate) struct ViewportInfo {
     pub(crate) next_list_height: usize,
 }
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Focus {
     Current,
@@ -238,7 +237,9 @@ impl View {
         }
 
         // Update the prev/next node tabs if needed.
-        if self.focus == Current { self.update_adjacent()?; }
+        if self.focus == Current {
+            self.update_adjacent()?;
+        }
 
         Ok(())
     }
@@ -298,7 +299,7 @@ impl View {
                 // BTreeSet::range panics on equal excluded bounds:
                 .filter(|(a, b)| a != b),
             Some((I(0), E(curr_idx) /* 0..curr_idx */)),
-            Some((I(curr_idx), I(curr_idx)) /* curr_idx ..= curr_idx */)
+            Some((I(curr_idx), I(curr_idx)) /* curr_idx ..= curr_idx */),
         );
 
         // Find the next node in the selection in the choosen direction:
@@ -340,7 +341,9 @@ impl View {
 }
 
 impl View {
-    pub fn get_nodes_trie(&self) -> &Trie { &self.current_node_trie }
+    pub fn get_nodes_trie(&self) -> &Trie {
+        &self.current_node_trie
+    }
 }
 
 impl View {
@@ -847,13 +850,17 @@ impl View {
     /// Update matches based on the given matching function `match` with input `key`.
     fn update_matches(&mut self, matcher: Matcher, pattern: &str, in_selection: bool) {
         let matches: Vec<(usize, Vec<usize>)> = if in_selection {
-            self.selection.par_iter().filter_map(|&idx| {
-                let id = &self.current.items[idx];
-                matcher(id, pattern, &self.graph)
-                    .map(|highlight| (idx, highlight))
-            }).collect()
+            self.selection
+                .par_iter()
+                .filter_map(|&idx| {
+                    let id = &self.current.items[idx];
+                    matcher(id, pattern, &self.graph).map(|highlight| (idx, highlight))
+                })
+                .collect()
         } else {
-            self.current.items.par_iter()
+            self.current
+                .items
+                .par_iter()
                 .enumerate()
                 .filter_map(|(idx, id)| {
                     matcher(id, pattern, &self.graph).map(|highlight| (idx, highlight))

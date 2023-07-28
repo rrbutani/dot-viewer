@@ -231,7 +231,7 @@ impl App {
             }
 
             Script {} => todo!(),
-            RegisteredCommand { name, script } => todo!(),
+            RegisteredCommand { .. } => todo!(),
             LoadScript {} => todo!(),
         }
     }

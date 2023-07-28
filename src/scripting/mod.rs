@@ -233,14 +233,14 @@
 
 type RhaiResult<T> = Result<T, Box<rhai::EvalAltResult>>;
 
-mod reference_manager;
 mod array_ref;
+mod reference_manager;
 
+mod edge;
 mod graph;
 mod node;
-mod edge;
 
-pub use reference_manager::{Ref, RefMut, ReferenceManager, Owned, Witness};
 pub use array_ref::ArrayRef;
+pub use reference_manager::{Owned, Ref, RefMut, ReferenceManager, Witness};
 
 // TODO: offer a module here?

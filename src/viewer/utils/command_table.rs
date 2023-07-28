@@ -14,7 +14,10 @@ use tui::{
     text::{Span, Spans},
 };
 
-use super::{trie::Trie, styles::{ERR, ITAL, HINT}};
+use super::{
+    styles::{ERR, HINT, ITAL},
+    trie::Trie,
+};
 
 #[allow(clippy::type_complexity)]
 pub struct CommandTable<
@@ -415,7 +418,7 @@ impl<B: Subcommand, E: ExtraSubcommands<B>, C, R, A> CommandTable<'_, B, E, C, R
     //
     // note that the function is allowed to return _extra_ spans to append
     pub fn make_validate_hook_on_lexed<Cmd, AutoCtx>(
-        func: impl for<'i, 'a> Fn(Cmd, &mut [Span<'i>], &'a AutoCtx) -> Option<Vec<Span<'i>>>
+        func: impl for<'i, 'a> Fn(Cmd, &mut [Span<'i>], &'a AutoCtx) -> Option<Vec<Span<'i>>>,
     ) -> impl for<'i, 'a> Fn(Cmd, &'i str, &'a AutoCtx) -> Spans<'i> {
         fn eat_whitespace<'i>(str: &mut &'i str) -> Span<'i> {
             let split_idx = str
