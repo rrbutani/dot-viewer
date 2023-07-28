@@ -299,11 +299,41 @@ pub fn command_table() -> SelectionCommandTable {
     SelectionCommandTable::new_with_hooks(
         /* pre parse hook */
         |args| {
-          todo!()
+            args.first_mut().and_then(|first_word| {
+                let (first_pos, first_char) = first_word.char_indices().next()?;
+                let (remove_first_char, op) = if first_char == '!' {
+                    (true, None) // replacement!
+                } else if let Ok(op) = SelectionOp::try_from(first_char) {
+                    (true, Some(op))
+                } else {
+                    (false, None)
+                };
+
+                if remove_first_char {
+                    match first_word {
+                        Cow::Borrowed(s) => *s = s.split_at(first_pos + first_char.len_utf8()).1,
+                        Cow::Owned(s) => {
+                            s.remove(first_pos);
+                        }
+                    }
+                }
+
+                op
+            })
         },
         /* post parse hook */ |kind, op| SelectionCommand { op, kind },
         /* subcommand autocomplete post hook */
-        |op, inp| { todo!() },
+        |op, inp| {
+            if let Some(op) = op {
+                if let Some(f) = inp.first_mut() {
+                    // Note: this will "disappear" prefix `!` when autocomplete
+                    // is used..
+                    //
+                    // not the best but it's fine
+                    *f = Cow::Owned(format!("{op}{f}"));
+                }
+            }
+        },
     )
 }
 
