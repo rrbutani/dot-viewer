@@ -6,12 +6,14 @@ use tui_tree_widget::{TreeItem, TreeState};
 
 use rayon::prelude::*;
 
+#[derive(Debug, Clone)]
 pub(crate) struct Item {
     id: String,
     children: Vec<Item>,
 }
 
 // https://github.com/EdJoPaTo/tui-rs-tree-widget/blob/main/examples/util/mod.rs
+#[derive(Debug, Clone)]
 pub(crate) struct Tree {
     pub state: TreeState,
     pub tree: Vec<TreeItem<'static>>,

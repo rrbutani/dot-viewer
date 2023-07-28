@@ -1,3 +1,4 @@
+#[cfg(feature = "scripting")]
 pub mod scripting;
 mod terminal;
 mod ui;

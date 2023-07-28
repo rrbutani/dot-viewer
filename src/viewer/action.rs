@@ -90,7 +90,7 @@ pub enum ActionCommand {
     },
 
     //  //////////////////////////////////////////////
-    // Global Action Commands:
+    // Global Action Commands (not tied to the current tab):
     Export(Export),
     Xdot(Xdot),
     Help,

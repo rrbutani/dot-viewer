@@ -34,8 +34,6 @@ impl App {
         if let Err(err) = &self.result {
             warn!("{err}");
         }
-
-        self.lookback = Some(key.code);
     }
 
     fn char(&mut self, c: char) -> DotViewerResult<Success> {
@@ -68,14 +66,12 @@ impl App {
             'n' => self.goto_next_match()?,
             'N' => self.goto_prev_match()?,
             // layering violations:
-            ' ' => self.tabs.selected().enter()?,
+            ' ' => self.tabs.selected_mut().enter()?,
             '?' => self.set_popup_mode(PopupMode::Help),
-            'q' => {
-                self.quit = true;
-            }
+            'q' => self.quit = true,
             'e' => return self.export(Export { filename: None }),
             'd' | 'D' => {
-                if let Some(ref curr_node) = self.tabs.selected().current.selected() {
+                if let Some(ref curr_node) = self.tabs.selected_mut().current.selected() {
                     let cfg =
                         if c == 'd' { RemoveConfig::EdgesFrom } else { RemoveConfig::AllEdges };
                     return self
@@ -140,7 +136,7 @@ impl App {
     fn enter(&mut self) -> DotViewerResult<Success> {
         match &self.mode {
             Mode::Normal => {
-                let view = self.tabs.selected();
+                let view = self.tabs.selected_mut();
                 view.enter().map(|_| Success::default())
             }
             Mode::Action => self.exec_action_command(),
@@ -204,7 +200,7 @@ impl App {
     }
 
     fn up(&mut self) -> DotViewerResult<()> {
-        let view = self.tabs.selected();
+        let view = self.tabs.selected_mut();
 
         match &self.mode {
             Mode::Normal => view.up()?,
@@ -220,7 +216,7 @@ impl App {
     }
 
     fn down(&mut self) -> DotViewerResult<()> {
-        let view = self.tabs.selected();
+        let view = self.tabs.selected_mut();
 
         match &self.mode {
             Mode::Normal => view.down()?,
@@ -238,12 +234,12 @@ impl App {
     fn right(&mut self) -> DotViewerResult<()> {
         match &self.mode {
             Mode::Normal => {
-                let view = self.tabs.selected();
+                let view = self.tabs.selected_mut();
                 view.right()
             }
             Mode::Search(_) => self.input.front(),
             Mode::Popup(PopupMode::Tree) => {
-                let view = self.tabs.selected();
+                let view = self.tabs.selected_mut();
                 view.subtree.right()
             }
             _ => Err(DotViewerError::KeyError(KeyCode::Right))?,
@@ -255,12 +251,12 @@ impl App {
     fn left(&mut self) -> DotViewerResult<()> {
         match &self.mode {
             Mode::Normal => {
-                let view = self.tabs.selected();
+                let view = self.tabs.selected_mut();
                 view.left()
             }
             Mode::Search(_) => self.input.back(),
             Mode::Popup(PopupMode::Tree) => {
-                let view = self.tabs.selected();
+                let view = self.tabs.selected_mut();
                 view.subtree.left()
             }
             _ => Err(DotViewerError::KeyError(KeyCode::Left))?,

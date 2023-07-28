@@ -37,9 +37,6 @@ pub(crate) struct App {
     /// Input form to be shown in the main screen
     pub input: Input,
 
-    /// Most recent key event
-    pub lookback: Option<KeyCode>,
-
     /// Action commands
     pub action_cmds: ActionCommandTable,
 
@@ -63,42 +60,36 @@ impl App {
 
         let input = Input::default();
 
-        let lookback = None;
-
         let action_cmds = action::command_table();
 
         let help = Table::new(help::HEADER, help::ROWS);
 
-        Ok(Self { quit, mode, result, tabs, input, lookback, action_cmds, help })
+        Ok(Self { quit, mode, result, tabs, input, action_cmds, help })
     }
 
     /// Navigate to the next match.
     pub fn goto_next_match(&mut self) -> DotViewerResult<()> {
-        let view = self.tabs.selected();
+        let view = self.tabs.selected_mut();
         view.matches.next();
         view.goto_match()
     }
 
     /// Navigate to the previous match.
     pub fn goto_prev_match(&mut self) -> DotViewerResult<()> {
-        let view = self.tabs.selected();
+        let view = self.tabs.selected_mut();
         view.matches.previous();
         view.goto_match()
     }
 
     /// Navigate to the first.
     pub fn goto_first(&mut self) -> DotViewerResult<()> {
-        if let Some(KeyCode::Char('g')) = self.lookback {
-            let view = self.tabs.selected();
-            view.goto_first()?;
-        }
-
-        Ok(())
+        let view = self.tabs.selected_mut();
+        view.goto_first()
     }
 
     /// Navigate to the last.
     pub fn goto_last(&mut self) -> DotViewerResult<()> {
-        let view = self.tabs.selected();
+        let view = self.tabs.selected_mut();
         view.goto_last()
     }
 
@@ -114,9 +105,9 @@ impl App {
 
     /// Update search matches with trie.
     pub fn update_search(&mut self) {
-        match &self.mode {
+        match self.mode {
             Mode::Search(smode) => {
-                let view = self.tabs.selected();
+                let view = self.tabs.selected_mut();
                 let key = &self.input.key;
 
                 match smode {
@@ -134,7 +125,7 @@ impl App {
 
     /// Autocomplete user input.
     pub fn autocomplete_fuzzy(&mut self) {
-        let view = self.tabs.selected();
+        let view = self.tabs.selected_mut();
 
         let key = &self.input.key;
         if let Some(key) = view.autocomplete(key) {
@@ -146,7 +137,7 @@ impl App {
 
     /// Autocomplete user input.
     pub fn autocomplete_regex(&mut self) {
-        let view = self.tabs.selected();
+        let view = self.tabs.selected_mut();
 
         let key = &self.input.key;
         if let Some(key) = view.autocomplete(key) {
@@ -179,7 +170,7 @@ impl App {
 
                 let key = &self.input.key;
                 return Err(DotViewerError::CommandError(format!(
-                    "Error when parsing '{key}': {e}"
+                    "Error when parsing '{key}' as action command: {e}"
                 )));
             }
         };
@@ -229,7 +220,7 @@ impl App {
     ) -> DotViewerResult<()> {
         self.set_normal_mode();
 
-        let current: &mut View = self.tabs.selected();
+        let current: &mut View = self.tabs.selected_mut();
         let new = match func(current) {
             Ok(new) => new,
             Err(err) => return Err(on_err(current, err)),
@@ -238,7 +229,7 @@ impl App {
         // Cannot replace the first tab.
         let selection_is_first_tab = self.tabs.state == 0;
         if in_place && !selection_is_first_tab {
-            *self.tabs.selected() = new;
+            *self.tabs.selected_mut() = new;
         } else {
             self.tabs.open(new);
         }
@@ -402,7 +393,7 @@ impl App {
     pub fn subgraph(&mut self) -> DotViewerResult<()> {
         self.set_normal_mode();
 
-        let view_current = self.tabs.selected();
+        let view_current = self.tabs.selected_mut();
         let view_new = view_current.subgraph()?;
         self.tabs.open(view_new);
 
@@ -430,11 +421,9 @@ impl App {
 
         self.mode = Mode::Search(smode);
 
-        let view = self.tabs.selected();
+        let view = self.tabs.selected_mut();
 
         view.matches = List::from_iter(Vec::new());
-        view.prevs = List::from_iter(Vec::new());
-        view.nexts = List::from_iter(Vec::new());
     }
 
     pub fn set_popup_mode(&mut self, pmode: PopupMode) {

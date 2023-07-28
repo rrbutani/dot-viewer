@@ -151,7 +151,7 @@ fn draw_current<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
     f.render_stateful_widget(list, chunk, &mut view.current.state);
 }
 
-fn draw_match<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
+fn draw_match<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &View) {
     let title = if view.matches.items.is_empty() { String::new() } else { view.progress_matches() };
     let block = Block::default().title(title).title_alignment(Alignment::Right);
 
@@ -202,7 +202,7 @@ fn draw_nexts<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
     f.render_stateful_widget(list, chunk, &mut view.nexts.state);
 }
 
-fn draw_metadata<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &mut View) {
+fn draw_metadata<B: Backend>(f: &mut Frame<B>, chunk: Rect, view: &View) {
     let block = surrounding_block("Attrs".to_string(), false);
 
     let id = view.current_id();

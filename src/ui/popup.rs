@@ -26,7 +26,7 @@ pub(super) fn draw_popup<B: Backend>(f: &mut Frame<B>, size: Rect, app: &mut App
 fn draw_tree<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App) {
     let block = surrounding_block("Select a subgraph".to_string(), false);
 
-    let view = app.tabs.selected();
+    let view = app.tabs.selected_mut();
     let subtree = &mut view.subtree;
 
     let tree = TUITree::new(subtree.tree.clone())

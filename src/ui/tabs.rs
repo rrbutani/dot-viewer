@@ -19,7 +19,7 @@ pub(super) fn draw_tabs<B: Backend>(f: &mut Frame<B>, chunk: Rect, app: &mut App
 
     draw_nav_bar(f, chunks[0], app);
 
-    let view = app.tabs.selected();
+    let view = app.tabs.selected_mut();
     draw_view(f, chunks[1], view);
 }
 

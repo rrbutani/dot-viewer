@@ -4,9 +4,15 @@ use std::str;
 
 use trie_rs::TrieBuilder;
 
-pub(crate) struct Trie {
+pub struct Trie {
     items: Vec<String>,
     trie: trie_rs::Trie<u8>,
+}
+
+impl Clone for Trie {
+    fn clone(&self) -> Self {
+        Self::from_iter(self.items.iter().cloned())
+    }
 }
 
 impl FromIterator<String> for Trie {
@@ -30,9 +36,11 @@ impl Trie {
     }
 
     pub fn autocomplete(&self, key: &str) -> Option<String> {
-        let predictions = if key.is_empty() { self.items.clone() } else { self.predict(key) };
-
-        longest_common_prefix(&predictions)
+        if key.is_empty() {
+            longest_common_prefix(&self.items)
+        } else {
+            longest_common_prefix(&self.predict(key))
+        }
     }
 
     pub fn predict(&self, key: &str) -> Vec<String> {

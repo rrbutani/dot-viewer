@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     fmt::Display,
-    iter,
+    iter, mem,
 };
 
 use crate::viewer::{
@@ -24,7 +24,8 @@ type Matcher = fn(&str, &str, &Graph) -> Option<Vec<usize>>;
 ///
 /// Named as an analogy to the database concept of "view",
 /// it holds a smaller portion of the original graph.
-pub(crate) struct View {
+#[derive(Clone)]
+pub struct View {
     /// Title of the view
     pub title: String,
 
@@ -32,21 +33,22 @@ pub(crate) struct View {
     pub graph: Graph,
 
     /// Current focus
-    pub focus: Focus,
+    pub(crate) focus: Focus,
+
     /// Topologically sorted list of all nodes in the view
-    pub current: List<String>, // has `idx => NodeId`
+    pub(crate) current: List<String>, // has `idx => NodeId`
     // `NodeId => idx`; helps update the selection
     current_node_to_idx_map: HashMap<NodeId, usize>,
 
     /// List of previous nodes of the currently selected node
-    pub prevs: List<String>,
+    pub(crate) prevs: List<String>,
     /// List of next nodes of the currently selected node
-    pub nexts: List<String>,
+    pub(crate) nexts: List<String>,
 
     /// Last search pattern
     pub pattern: String,
     /// List of matching nodes given some input, with highlight index
-    pub matches: List<(usize, Vec<usize>)>,
+    pub(crate) matches: List<(usize, Vec<usize>)>,
 
     /// Current selection (set of indexes into `current`)
     pub selection: BTreeSet<usize>,
@@ -57,7 +59,7 @@ pub(crate) struct View {
     pub trie: Trie,
 
     /// Tree holding the subgraph tree of the view
-    pub subtree: Tree,
+    pub(crate) subtree: Tree,
 
     pub(crate) viewport_info: ViewportInfo,
 }
@@ -70,7 +72,8 @@ pub(crate) struct ViewportInfo {
     pub(crate) next_list_height: usize,
 }
 
-#[derive(PartialEq)]
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Focus {
     Current,
     Prev,
@@ -241,21 +244,21 @@ impl View {
 
     /// Navigate to the selected adjacent node.
     pub fn goto_adjacent(&mut self) -> DotViewerResult<()> {
-        let err = Err(DotViewerError::ViewerError("no node selected".to_string()));
+        let err = || Err(DotViewerError::ViewerError("no node selected".to_string()));
 
         match &self.focus {
-            Focus::Prev => self.prevs.selected().map_or(err, |id| self.goto(&id)),
-            Focus::Next => self.nexts.selected().map_or(err, |id| self.goto(&id)),
-            _ => err,
+            Focus::Prev => self.prevs.selected().map_or_else(err, |id| self.goto(&id)),
+            Focus::Next => self.nexts.selected().map_or_else(err, |id| self.goto(&id)),
+            _ => err(),
         }
     }
 
     /// Navigate to the matched node.
     pub fn goto_match(&mut self) -> DotViewerResult<()> {
-        self.matched_id()
-            .map_or(Err(DotViewerError::ViewerError("no node selected".to_string())), |id| {
-                self.goto(&id)
-            })
+        self.matched_id().map_or(
+            Err(DotViewerError::ViewerError("no nodes in search result".to_string())),
+            |id| self.goto(&id),
+        )
     }
 
     /// Navigate to the currently selected node with `id`.
@@ -475,7 +478,7 @@ impl View {
     ///
     /// Returns `Ok` with a new `View` if the selection is non-empty.
     pub fn filter(&self) -> DotViewerResult<View> {
-        let node_ids = (self.selection.iter()).map(|idx| &self.current.items[*idx]);
+        let node_ids = self.selection_as_node_ids();
         let graph = self.graph.filter(node_ids);
 
         if graph.is_empty() {

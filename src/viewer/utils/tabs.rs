@@ -56,7 +56,11 @@ impl<T> Tabs<T> {
         }
     }
 
-    pub fn selected(&mut self) -> &mut T {
+    pub fn selected(&self) -> &T {
+        &self.tabs[self.state]
+    }
+
+    pub fn selected_mut(&mut self) -> &mut T {
         &mut self.tabs[self.state]
     }
 }
