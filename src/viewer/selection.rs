@@ -81,16 +81,23 @@ pub enum SelectionKind {
     #[clap(name = "subgraph")]
     SubGraph {
         subgraph: GraphId,
+        // TODO: offer a recursive version? or option?
     },
     Toggle {
         node: NodeId,
     },
+
+    // Icky; shouldn't really be in a `SelectionInfo`..
+    Clear,
     // Script {/* ... path */},
 
-    // For recordkeeping (`SelectionInfo`); not meant to be a command.
-    #[clap(skip)]
+    // Another case of weird impedance mismatch between `SelectionCommand` and
+    // `SelectionInfo`; we want this state to be filled in by the viewer during
+    // processing. It will not be present post-arg parse.
     Search {
+        #[clap(skip)]
         kind: SearchMode,
+        #[clap(skip)]
         pattern: String,
     },
 
@@ -170,6 +177,9 @@ impl fmt::Display for SelectionKind {
             Toggle { node } => write!(f, "{{ {node} }}"),
             // Script {} => todo!(),
             RegisteredCommand { name, .. } => write!(f, "script-command({name})"),
+
+            // Shouldn't actually land in a `SelectionOp`...
+            Clear => write!(f, "clear"),
         }
     }
 }
@@ -313,8 +323,8 @@ impl SelectionInfo {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SelectionCommand {
     /// `None` = clear previous selection
-    op: Option<SelectionOp>,
-    kind: SelectionKind,
+    pub op: Option<SelectionOp>,
+    pub kind: SelectionKind,
 }
 
 pub type SelectionCommandTable = CommandTable<
@@ -393,7 +403,8 @@ pub fn command_table() -> SelectionCommandTable {
                     None
                 }
                 RegisteredCommand { .. } => None,
-                Search { .. } => unreachable!(),
+                Search { .. } => None,
+                Clear => None,
             }
         },
         /* validate hook */
@@ -437,16 +448,23 @@ pub fn command_table() -> SelectionCommandTable {
                         assert_eq!(inp[1].content.as_ref(), subgraph);
                         inp[1].style = style;
                     },
+                    Search { .. } => {
+                        if view.last_search.is_none() {
+                            extra.push(Span::styled(
+                                "  /* no previous search result! */", ERR
+                            ));
+                        }
+                    },
 
                     // If no node is specified there's nothing to check:
                     Neighbors { .. } | Parents { .. } | Children { .. } |
+                    Clear => { },
                     // If we're here it's a real command; don't know anything
                     // else about it:
                     //
                     // eventually we can let scripts provide a hook for this
                     // (TODO)
                     RegisteredCommand { .. } => { },
-                    Search { .. } => unreachable!(),
                 }
 
                 Some(extra)

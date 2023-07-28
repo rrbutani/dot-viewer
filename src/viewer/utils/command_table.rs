@@ -120,6 +120,7 @@ impl<Base: Subcommand, Extra: ExtraSubcommands<Base>, AutoCtx>
     }
 }
 
+#[allow(clippy::type_complexity)]
 impl<'f, Base: Subcommand, Extra: ExtraSubcommands<Base>, Ctx, Ret, AutoCtx>
     CommandTable<'f, Base, Extra, Ctx, Ret, AutoCtx>
 {

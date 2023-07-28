@@ -30,3 +30,9 @@ pub enum SearchMode {
     Fuzzy { in_selection: bool },
     Regex { in_selection: bool },
 }
+
+impl Default for SearchMode {
+    fn default() -> Self {
+        SearchMode::Fuzzy { in_selection: false }
+    }
+}

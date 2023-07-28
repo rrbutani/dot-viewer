@@ -6,7 +6,7 @@ use crate::viewer::{
     error::{DotViewerError, DotViewerResult},
     help,
     modes::{Mode, PopupMode, SearchMode},
-    selection::{self, SelectionCommandTable},
+    selection::{self, SelectionCommandTable, SelectionCommand},
     success::Success,
     utils::{Input, List, Table, Tabs},
     view::View,
@@ -237,7 +237,7 @@ impl App {
     }
 
     pub fn exec_selection_command(&mut self) -> DotViewerResult<Success> {
-        let command = match self.selection_cmds.parse(&self.input.key, true) {
+        let SelectionCommand { op, kind } = match self.selection_cmds.parse(&self.input.key, true) {
             Ok(cmd) => cmd,
             Err(e) => {
                 self.set_normal_mode();
@@ -249,7 +249,19 @@ impl App {
             }
         };
 
-        todo!("{command:?}")
+        // TODO: pass in the registered command table later...
+        //
+        // this is state that `App` has that'll be needed to execute
+        // `SelectionKind::RegisteredOp`
+
+        // TODO: report back how many nodes added/removed from the selection?
+        // maybe
+        let ret = self.tabs.selected_mut().apply_selection_command(op, kind)
+            .map(|()| Success::default());
+
+        self.set_normal_mode();
+
+        ret
     }
 
     fn new_view_helper_with_err_handler<E>(

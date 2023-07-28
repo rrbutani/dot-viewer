@@ -11,12 +11,14 @@ use crate::viewer::{
     utils::{List, Tree, Trie},
 };
 
-use graphviz_rs::prelude::*;
+use graphviz_rs::{prelude::*, graphs::graph::WalkDirections};
 
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use log::info;
 use rayon::prelude::*;
 use regex::Regex;
+
+use super::SearchMode;
 
 type Matcher = fn(&str, &str, &Graph) -> Option<Vec<usize>>;
 
@@ -47,7 +49,7 @@ pub struct View {
     pub(crate) nexts: List<String>,
 
     /// Last search pattern
-    pub pattern: String,
+    pub last_search: Option<(SearchMode, String)>, // (search kind, pattern)
     /// List of matching nodes given some input, with highlight index
     pub(crate) matches: List<(usize, Vec<usize>)>,
 
@@ -98,7 +100,6 @@ impl View {
             current.items.iter().cloned().enumerate().map(|(i, n)| (n, i)).collect();
         let current_node_trie = Trie::from_iter(current.items.iter().cloned());
 
-        let pattern = String::new();
         let matches = List::from_iter(Vec::new());
 
         let selection = BTreeSet::new();
@@ -115,7 +116,7 @@ impl View {
             current_node_trie,
             prevs,
             nexts,
-            pattern,
+            last_search: None,
             matches,
             selection,
             selection_info,
@@ -160,7 +161,7 @@ impl View {
         }
 
         to.matches = self.matches.clone();
-        to.pattern = self.pattern.clone();
+        to.last_search = self.last_search.clone();
 
         Ok(())
     }
@@ -352,27 +353,29 @@ impl View {
     /// We expect to only call this function when the focus is on the node list.
     pub fn toggle(&mut self) -> DotViewerResult<()> {
         assert!(self.focus == Focus::Current);
-        let node_idx = self
+
+        let node = self
             .current
-            .state
             .selected()
             .ok_or_else(|| DotViewerError::ViewerError("no node selected".to_string()))?;
 
-        // Check if this node is already selected:
-        let op = if self.selection.contains(&node_idx) {
-            self.selection.remove(&node_idx);
-            SelectionOp::Difference
-        } else {
-            self.selection.insert(node_idx);
-            SelectionOp::Union
-        };
-
-        let node_id = self.current.items[node_idx].clone();
-        let kind = SelectionKind::Toggle { node: node_id };
-
-        self.selection_info.push(op, kind);
+        self.apply_selection_command(None, SelectionKind::Toggle { node })?;
         Ok(())
     }
+}
+
+// I cannot figure out how to express this inline; seems like we'd want
+// `impl for<'g> FnOnce(&'g Graph) -> Result<(impl Iterator<Item = &'g NodeId> + 'g), _>`
+// but that is not allowed yet.
+pub trait ProduceGraphNodeIterFn<'g>: FnOnce(&'g Graph) -> Result<Self::It, DotViewerError> {
+    type It: Iterator<Item = &'g NodeId> + 'g;
+}
+impl<'g, I, F> ProduceGraphNodeIterFn<'g> for F
+where
+    I: Iterator<Item = &'g NodeId> + 'g,
+    F: FnOnce(&'g Graph) -> Result<I, DotViewerError>,
+{
+    type It = I;
 }
 
 impl View {
@@ -382,6 +385,255 @@ impl View {
 
     pub(crate) fn selection_as_node_ids_par(&self) -> impl ParallelIterator<Item = &NodeId> {
         self.selection.par_iter().map(|&id| &self.current.items[id])
+    }
+
+    /// `op` = `None` means replace the selection!
+    pub(crate) fn update_selection_with_node_ids<'g>(
+        &'g mut self,
+        op: Option<SelectionOp>,
+        get_ids: impl ProduceGraphNodeIterFn<'g>,
+    ) -> Result<(), DotViewerError> {
+        Self::update_selection(
+            &self.current.items,
+            &mut self.selection,
+            op,
+            get_ids(&self.graph)?.map(|id| self.current_node_to_idx_map[id]),
+        );
+
+        Ok(())
+    }
+
+    pub(crate) fn update_selection_with_node_idxes(
+        &mut self,
+        op: Option<SelectionOp>,
+        idxes: impl Iterator<Item = usize>,
+    ) {
+        Self::update_selection(&self.current.items, &mut self.selection, op, idxes)
+    }
+
+    fn update_selection(
+        node_list: &Vec<NodeId>,
+        selection: &mut BTreeSet<usize>,
+        op: Option<SelectionOp>,
+        idxes: impl Iterator<Item = usize>,
+    ) {
+        let len = node_list.len();
+        let idxes = idxes.inspect(|&x| {
+            if x >= len {
+                unreachable!("cannot select out of bounds index!");
+            }
+        });
+        let size_hint = idxes.size_hint();
+
+        use SelectionOp::*;
+        match op {
+            // TODO: not clear whether doing this operations in-place is faster;
+            // will surely depend on the size of `idxes`...
+            //
+            // the "not in place" route has the potential to be faster because
+            // it sorts keys (note that we are unlikely to have an already
+            // sorted idxes because of the HashMaps involved.. but the actual
+            // operations producing the selections may be able to yield indexes
+            // in (topographically sorted) order trivially? i.e. neighbors,
+            // parents, children; may be worth exploring)
+
+            // in place! (TODO: tune the heuristic)
+            Some(op) if (selection.len() / size_hint.1.unwrap_or(size_hint.0)) < 8 => match op {
+                Intersection => {
+                    // Still does one large allocation...
+                    // We are hypothesizing that we generally remove fewer nodes
+                    // than we keep..
+                    //
+                    // Note: this is probably categorically worse than the not
+                    // in place option route for `Intersection`; here we're
+                    // already always doing a full `O(N)` allocation.
+                    //
+                    // The only saving grace may be in cases where the removal
+                    // set is truly tiny; a small number of `remove` calls may
+                    // be able to beat a full sort + new BTreeSet construction.
+                    //
+                    // Note that we represent the removal set as a sorted Vec
+                    // instead of a BTreeSet or a HashSet; we're hypothesizing
+                    // that we're going to remove most of the elements and we
+                    // don't want to do a bunch of reallocations when stuff
+                    // shifts. So we represent removal as `(_, false)` and take
+                    // advantage of the fact that the list is already sorted for
+                    // us. Lookup is `log(n)` instead of `O(1)` but removal is
+                    // effectively `O(1)`; we'll have to filter out these
+                    // "removed" values later but that's cheaper than
+                    // shifting/reallocating.
+                    let mut to_remove =
+                        selection.par_iter().cloned().map(|x| (x, true)).collect::<Vec<_>>();
+
+                    // Find nodes that aren't in the rhs:
+                    for idx in idxes {
+                        if let Ok(idx) = to_remove.binary_search_by_key(&idx, |&(x, _)| x) {
+                            // we're keeping the node; it's in the intersection
+                            to_remove[idx].1 = false;
+                        } else {
+                            // not in the lhs so it's not in the result
+                        }
+                    }
+
+                    // Remove the nodes marked for removal
+                    for removal_idx in
+                        to_remove.into_iter().filter(|(_, valid)| *valid).map(|(x, _)| x)
+                    {
+                        assert!(selection.remove(&removal_idx))
+                    }
+                }
+                Union => selection.extend(idxes),
+                Difference => idxes.for_each(|x| {
+                    selection.remove(&x);
+                }),
+                SymmetricDifference => {
+                    // NOTE! this will break if `idxes` contains duplicates
+                    // (specifically elements that are duplicated an even number
+                    // of times)
+                    for idx in idxes {
+                        if !selection.remove(&idx) {
+                            selection.insert(idx);
+                        }
+                    }
+                }
+            },
+            Some(op) => {
+                // not in place
+                let rhs = idxes.collect();
+                let lhs = mem::take(selection);
+
+                *selection = match op {
+                    Intersection => &lhs & &rhs,
+                    Union => &lhs | &rhs,
+                    Difference => &lhs - &rhs,
+                    SymmetricDifference => &lhs ^ &rhs,
+                }
+            }
+            None => {
+                selection.clear();
+                selection.extend(idxes)
+            }
+        }
+    }
+}
+
+impl View {
+    pub fn apply_selection_command(
+        &mut self,
+        mut op: Option<SelectionOp>,
+        mut kind: SelectionKind,
+    ) -> Result<(), DotViewerError> {
+        use SelectionKind::*;
+
+        // Fill in missing nodes with the currently focused node:
+        //
+        // (and apply other fixups)
+        //
+        // TODO: spin this pre-check step off and have `validate` use it too..
+        match &mut kind {
+            // If not specified, use the focused node for these:
+            Neighbors { center: node, .. } |
+            Parents { bottom: node, .. } |
+            Children { root: node, .. } => {
+                if node.is_none() {
+                    let current_focus = self.current.selected()
+                        .ok_or_else(|| DotViewerError::CommandError("no node specified for selection command and no node currently focused".to_string()))?;
+                    *node = Some(current_focus);
+                }
+            }
+            // Toggle is a little special; for convenience, if an `op` is not
+            // already specified we default to flipping the current node:
+            Toggle { node } => {
+                if op.is_none() {
+                    let idx = self.current_node_to_idx_map.get(node)
+                        .ok_or_else(|| DotViewerError::CommandError(format!("node `{node}` does not exist")))?;
+                    op = Some(if self.selection.contains(idx) {
+                        SelectionOp::Difference // remove the node
+                    } else {
+                        SelectionOp::Union // add the node
+                    });
+                }
+            },
+            // For search we want to actually get the state from the last search
+            // query:
+            Search { kind, pattern } => {
+                assert_eq!(*kind, Default::default());
+                assert_eq!(pattern, "");
+                if let Some((last_kind, last_pattern)) = &self.last_search {
+                    *kind = *last_kind;
+                    *pattern = last_pattern.clone();
+                } else {
+                    return Err(DotViewerError::CommandError(
+                        "cannot update the selection using the last search result; there is no previous search result!".to_string()
+                    ))
+                }
+            },
+
+            SubGraph { .. } => { },
+
+            Clear => if op.is_some() {
+                return Err(DotViewerError::CommandError(
+                    "don't use ops with clear".to_string()
+                ))
+            },
+            RegisteredCommand { .. } => todo!(),
+        }
+
+        // Now we can do the actual processing:
+        #[allow(clippy::unit_arg)]
+        match &kind {
+            Neighbors { depth, center: node } |
+            Parents { depth, bottom: node } |
+            Children { depth, root: node } => self.update_selection_with_node_ids(
+                op,
+                |graph| Ok(
+                    graph
+                        .find_subset::<String>(node.as_ref().expect("node filled in"), *depth, match &kind {
+                            Neighbors { .. } => WalkDirections::Both,
+                            Parents { .. } => WalkDirections::From,
+                            Children { .. } => WalkDirections::To,
+                            _ => unreachable!(),
+                        })?
+                        .into_iter()
+                )
+            ),
+            SubGraph { subgraph } => self.update_selection_with_node_ids(
+                op,
+                |graph: &Graph| Ok(
+                    graph
+                        .search_subgraph(subgraph)
+                        .ok_or_else(|| DotViewerError::CommandError(
+                            format!("subgraph {subgraph} does not exist!")
+                        ))?
+                        .nodes()
+                        .into_iter()
+                )
+            ),
+            Toggle { node } => Ok(self.update_selection_with_node_idxes(op, {
+                if let Some(&id) = self.current_node_to_idx_map.get(node) {
+                    [id].into_iter()
+                } else {
+                    return Err(DotViewerError::CommandError(format!("node {node} does not exist")));
+                }
+            })),
+            Clear => Ok(self.update_selection_with_node_idxes(op, [].into_iter())),
+            Search { .. } => Ok({
+                // Not great that we have to collect here but alas -- can solve
+                // later if it's an issue.
+                let it = self.matches.items.iter().map(|&(idx, _)| idx).collect::<Vec<_>>();
+                self.update_selection_with_node_idxes(op, it.into_iter())
+            }),
+            RegisteredCommand { .. } => todo!(),
+        }?;
+
+        // Update selection op:
+        match (kind, op) {
+            (Clear, None) => self.selection_info.clear(),
+            (kind, None) => self.selection_info = SelectionInfo::single_selection(kind),
+            (kind, Some(op)) => self.selection_info.push(op, kind),
+        }
+
+        Ok(())
     }
 }
 
@@ -868,7 +1120,6 @@ impl View {
                 .collect()
         };
 
-        self.pattern = pattern.to_string();
         self.matches = List::from_iter(matches);
     }
 
@@ -876,12 +1127,14 @@ impl View {
     /// Fuzzy matcher matches input against node ids.
     pub fn update_fuzzy(&mut self, key: &str, in_selection: bool) {
         self.update_matches(match_fuzzy, key, in_selection);
+        self.last_search = Some((SearchMode::Fuzzy { in_selection }, key.to_string()))
     }
 
     /// Update matches in regex search mode.
     /// Regex matcher matches input against node represented in raw dot format string.
     pub fn update_regex(&mut self, key: &str, in_selection: bool) {
         self.update_matches(match_regex, key, in_selection);
+        self.last_search = Some((SearchMode::Regex { in_selection }, key.to_string()))
     }
 
     /// Update trie based on the current matches.
