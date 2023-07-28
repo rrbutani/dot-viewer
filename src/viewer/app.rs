@@ -1,7 +1,7 @@
 use crate::viewer::{
     action::{
-        self, ActionCommand, ActionCommandTable, Children, Export, Filter, MakeStub, MakeSubgraph,
-        Neighbors, Parents, Remove, Xdot,
+        self, ActionCommand, ActionCommandTable, Children, DuplicateTab, Export, Filter, MakeStub,
+        MakeSubgraph, Neighbors, Parents, Remove, RenameTab, Xdot,
     },
     error::{DotViewerError, DotViewerResult},
     help,
@@ -200,6 +200,8 @@ impl App {
             Neighbors(n) => self.neighbors(n).map(|_| Success::default()),
             Export(e) => self.export(e),
             Xdot(x) => self.xdot(x),
+            DuplicateTab(d) => self.duplicate(d).map(|_| Success::default()),
+            RenameTab(r) => self.rename(r).map(|_| Success::default()),
             Filter(f) => self.filter(f).map(|_| Success::default()),
             Help => {
                 self.set_popup_mode(PopupMode::Help);
@@ -356,6 +358,27 @@ impl App {
         MakeSubgraph { name, in_place }: MakeSubgraph,
     ) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.make_new_subgraph(&name), in_place)
+    }
+
+    pub fn duplicate(&mut self, DuplicateTab { name }: DuplicateTab) -> DotViewerResult<()> {
+        self.new_view_helper(
+            |v| {
+                let mut new = v.clone();
+                if let Some(name) = name {
+                    new.title = name;
+                }
+
+                Ok(new)
+            },
+            false,
+        )
+    }
+
+    pub fn rename(&mut self, RenameTab { name }: RenameTab) -> DotViewerResult<()> {
+        self.set_normal_mode();
+
+        self.tabs.selected_mut().title = name;
+        Ok(())
     }
 
     /// Export the current view to dot.

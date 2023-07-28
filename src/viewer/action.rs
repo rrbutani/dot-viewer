@@ -42,9 +42,6 @@ pub fn command_table() -> ActionCommandTable {
 pub enum ActionCommand {
     // TODO: run script?
     // fold leaves? -- nah, a job for script
-
-    // TODO: rename? -- nah, keep in App
-    // TODO: duplicate -- nah, keep in App
     /// Replaces the current selection with a new node, rewriting edges to
     /// match.
     ///
@@ -80,6 +77,17 @@ pub enum ActionCommand {
     /// Apply filter on the current view, based on the current matches.
     /// Opens a new tab with the filtered view.
     Filter(Filter),
+
+    /// Rename the current tab.
+    #[clap(name = "rename")]
+    RenameTab(RenameTab),
+
+    /// Duplicates the current tab.
+    ///
+    /// Optionally takes a name for the new tab; defaults to the same name as
+    /// the current tab.
+    #[clap(name = "duplicate")]
+    DuplicateTab(DuplicateTab),
 
     Script {},
 
@@ -196,4 +204,18 @@ pub struct Filter {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Args)]
 pub struct Xdot {
     pub filename: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Args)]
+pub struct RenameTab {
+    /// New name for the current tab.
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Args)]
+pub struct DuplicateTab {
+    /// Name for the duplicated tab. Defaults to the name of the current tab if
+    /// not specified.
+    pub name: Option<String>,
+
 }

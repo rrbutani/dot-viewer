@@ -190,8 +190,6 @@ impl View {
     }
 }
 
-// TODO: option to rename the current tab...
-
 impl View {
     /// Navigate to the first node in focused list.
     pub fn goto_first(&mut self) -> DotViewerResult<()> {
