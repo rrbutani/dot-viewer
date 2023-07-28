@@ -21,6 +21,8 @@ pub enum SelectionInfo {
     },
 }
 
+#[rustfmt::skip] #[allow(unused)] use std::collections::HashSet; // doc links
+
 /// Represents the set operations that can be applied to the selection to modify
 /// it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -53,7 +55,7 @@ pub enum SelectionOp {
 /// Right-hand side operands to [`SelectionOp`].
 ///
 /// These all represent a set of nodes.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Subcommand)]
 #[warn(clippy::missing_docs_in_private_items)]
 pub enum SelectionKind {
     Search { kind: SearchMode, pattern: String },

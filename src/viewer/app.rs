@@ -223,7 +223,19 @@ impl App {
     }
 
     pub fn exec_selection_command(&mut self) -> DotViewerResult<Success> {
-        todo!();
+        let command = match self.selection_cmds.parse(&self.input.key, true) {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                self.set_normal_mode();
+
+                let key = &self.input.key;
+                return Err(DotViewerError::CommandError(format!(
+                    "Error when parsing '{key}' as selection command: {e}"
+                )));
+            }
+        };
+
+        todo!("{command:?}")
     }
 
     fn new_view_helper_with_err_handler<E>(

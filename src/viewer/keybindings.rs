@@ -39,8 +39,7 @@ impl App {
     fn char(&mut self, c: char) -> DotViewerResult<Success> {
         match &self.mode {
             Mode::Normal => return self.char_normal(c),
-            Mode::Action => self.char_command(c)?,
-            Mode::Selection => self.char_selection(c)?,
+            Mode::Action | Mode::Selection => self.char_command(c)?,
             Mode::Search(_) => self.char_search(c),
             Mode::Popup(_) => self.char_popup(c)?,
         };
@@ -53,7 +52,7 @@ impl App {
             '/' | '?' => self.set_search_mode(SearchMode::Fuzzy { in_selection: c == '?' }),
             'r' | 'R' => self.set_search_mode(SearchMode::Regex { in_selection: c == 'R' }),
             ':' => self.set_command_mode(),
-            's' => self.set_selection_mode(),
+            's' | '"' => self.set_selection_mode(),
             'c' => self.tabs.close()?,
             'h' => self.left()?,
             'j' => self.down()?,
@@ -88,11 +87,6 @@ impl App {
     }
 
     fn char_command(&mut self, c: char) -> DotViewerResult<()> {
-        self.input.insert(c);
-        Ok(())
-    }
-
-    fn char_selection(&mut self, c: char) -> DotViewerResult<()> {
         self.input.insert(c);
         Ok(())
     }
@@ -156,7 +150,7 @@ impl App {
 
     fn backspace(&mut self) -> DotViewerResult<()> {
         match &self.mode {
-            Mode::Action => self.input.delete(),
+            Mode::Action | Mode::Selection => self.input.delete(),
             Mode::Search(_) => {
                 self.input.delete();
                 self.update_search();
