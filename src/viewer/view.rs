@@ -917,6 +917,13 @@ impl View {
             current_longest_common_subgraph_path.last().map(|&s| s.clone()).unwrap()
         };
         let label = format!(
+            "{name} ({num} nodes)\n\n(Stub of: {selection_info})",
+            name = new_node_name,
+            selection_info = self.selection_info.abbreviated(),
+            num = removed_nodes.len()
+        );
+
+        let alt_text = format!(
             "Stub of:{}",
             removed_nodes.keys().map(|n| n.id().clone()).collect::<Vec<_>>().join("\n  -") // TODO: use labels if present instead of `NodeId`
         );
@@ -925,8 +932,7 @@ impl View {
             HashSet::from([
                 Attr::new("peripheries".to_string(), "2".to_string(), false),
                 Attr::new("label".to_string(), label, false),
-                // TODO: use name as label
-                // TODO: put stub info in tooltip?
+                Attr::new("tooltip".to_string(), alt_text, false),
                 // TODO: shape, fill, style
             ]),
         );

@@ -284,5 +284,9 @@ fn pretty_metadata(node: &Node) -> String {
         }
     }
 
+    if let Some(tooltip) = attrs.get("tooltip") {
+        writeln!(metadata, "{}", tooltip.value()).unwrap();
+    }
+
     metadata
 }

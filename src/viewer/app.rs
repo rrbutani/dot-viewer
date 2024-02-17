@@ -540,8 +540,8 @@ fn write_graph<'a>(
         for node_id in selection {
             highlighted_graph
                 .modify_node_attrs(node_id, |attrs| {
-                    attrs.insert(Attr::new("style".to_string(), "filled".to_string(), false));
-                    attrs.insert(Attr::new(
+                    attrs.replace(Attr::new("style".to_string(), "filled".to_string(), false));
+                    attrs.replace(Attr::new(
                         "fillcolor".to_string(),
                         "#78787860".to_string(),
                         false,

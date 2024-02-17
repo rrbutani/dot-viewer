@@ -157,21 +157,21 @@ Key | Actions
 
   - [ ] selection:
     + operator (prefixes):
-      * [ ] make new selection: `!`
-      * [ ] narrow existing selection: (default) `&`
-      * [ ] add to selection: `+`
-      * [ ] subtract from selection: `-`
-      * [ ] symmetric difference: `^`
+      * [x] make new selection: `!`
+      * [x] narrow existing selection: (default) `&`
+      * [x] add to selection: `+`
+      * [x] subtract from selection: `-`
+      * [x] symmetric difference: `^`
     + predicates:
       * (search commands already influence the selection... but always makes a new selection)
         - I think we should actually maybe have the search selection be different than this new selection?
 
-      * [ ] `search (current search)`
-      * [ ] `neighbors of cursor (opt depth)`
-      * [ ] `parents of cursor (opt depth)`
-      * [ ] `children of cursor (opt depth)`
-      * [ ] `subgraph [subgraph name]`
-      * [ ] `clear` (implicit `!`, always a "new" selection)
+      * [x] `search (current search)`
+      * [x] `neighbors of cursor (opt depth)`
+      * [x] `parents of cursor (opt depth)`
+      * [x] `children of cursor (opt depth)`
+      * [x] `subgraph [subgraph name]`
+      * [x] `clear` (implicit `!`, always a "new" selection)
 
       * `script_watch ...` (until esc or something..)?
         - not sure... this will be tricky
