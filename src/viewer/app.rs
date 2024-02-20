@@ -17,6 +17,8 @@ use std::{fs, io, ops::Not, path::Path};
 use graphviz_rs::prelude::*;
 use tui::text::Spans;
 
+use super::action::MakeUmbrella;
+
 /// `App` holds `dot-viewer` application states.
 ///
 /// `tui-rs` simply redraws the entire screen in a loop while accepting keyboard inputs.
@@ -208,6 +210,7 @@ impl App {
         let ret = match command {
             MakeStub(s) => self.make_stub(s).map(|_| Success::default()),
             MakeSubgraph(s) => self.make_subgraph(s).map(|_| Success::default()),
+            MakeUmbrella(u) => self.make_umbrella(u).map(|_| Success::default()),
             RemoveSelection(r) => self.remove_selection(r).map(|_| Success::default()),
             Children(c) => self.children(c).map(|_| Success::default()),
             Parents(p) => self.parents(p).map(|_| Success::default()),
@@ -404,6 +407,12 @@ impl App {
         MakeSubgraph { name, in_place }: MakeSubgraph,
     ) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.make_new_subgraph(&name), in_place)
+    }
+
+    pub fn make_umbrella(
+        &mut self, MakeUmbrella { name, mode, in_place }: MakeUmbrella,
+    ) -> DotViewerResult<()> {
+        self.new_view_helper(|curr| curr.make_new_umbrella(&name, mode).map(|(v, _)| v), in_place)
     }
 
     pub fn duplicate(&mut self, DuplicateTab { name }: DuplicateTab) -> DotViewerResult<()> {

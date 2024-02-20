@@ -36,6 +36,21 @@ pub enum ActionCommand {
     #[clap(name = "mk-subgraph")]
     MakeSubgraph(MakeSubgraph),
 
+    /// Creates a new node which depends on all the nods in the selection and
+    /// takes on all the incoming edges to nodes in the current selection.
+    ///
+    /// This is like [`MakeStub`] except that it doesn't replace the nodes in
+    /// the selection (and doesn't rewrite their outgoing edges).
+    ///
+    /// Note: the created node is placed in the highest common subgraph of the
+    /// nodes in the selection.
+    ///
+    /// Note: creating the umbrella node can fail if the selection's incoming
+    /// edges do not match the criteria specified by the
+    /// [`MakeUmbrellaRdepsMode`] instance given.
+    #[clap(name = "mk-grouped", alias = "mk-umbrella")]
+    MakeUmbrella(MakeUmbrella),
+
     /// Removes nodes in the selection (+ edges to/from those nodes,
     /// optionally).
     #[clap(name = "remove")]
@@ -94,7 +109,7 @@ pub struct MakeStub {
     /// Must not collide with any node already in the graph.
     pub name: String,
 
-    #[arg(hide = true, long = "in-place")]
+    #[arg(hide = true, long = "in-place", default_value_t = false)]
     pub in_place: bool,
 }
 
@@ -107,6 +122,54 @@ pub struct MakeSubgraph {
 
     #[arg(hide = true, long = "in-place", default_value_t = false)]
     pub in_place: bool,
+}
+
+/// Information for the umbrella node to create.
+///
+/// The created node with depend on all the nodes in the current selection and
+/// will take on their incoming edges (i.e. rdeps).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Args)]
+pub struct MakeUmbrella {
+    /// Name of the new (umbrella) node to create.
+    ///
+    /// Must not collide with any node already in the graph.
+    pub name: String,
+
+    /// Which incoming edges (to nodes in the selection) to hoist.
+    #[arg(name = "rdeps-mode", value_enum, default_value_t)]
+    pub mode: MakeUmbrellaRdepsMode,
+
+    #[arg(hide = true, long = "in-place", default_value_t = false)]
+    pub in_place: bool,
+}
+
+/// Controls which incoming edges (to nodes in the selection) will be hoisted to
+/// the new umbrella node when creating an umbrella node with [`MakeUmbrella`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, ValueEnum)]
+pub enum MakeUmbrellaRdepsMode {
+    /// Requires that all nodes in the selection have incoming edges from
+    /// exactly the same set of nodes (i.e. every node in the selection must
+    /// have exactly the same rdeps).
+    ///
+    /// If this condition is not met, creating the umbrella node fails.
+    #[default]
+    #[value(name = "exact", aliases(["exact-match", "strict", "e"]))]
+    ExactMatch,
+
+    /// Rewrites all incoming edges to nodes in the selection.
+    ///
+    /// Note: edges originating from other nodes in the selection are
+    /// **not rewritten**. Rewriting these nodes to point to the umbrella node
+    /// would produce cycles.
+    #[value(name = "union", aliases(["all", "lenient", "u"]))]
+    Union,
+
+    /// Rewrites only incoming edges that *all nodes in the selection share*.
+    ///
+    /// Any incoming edges to nodes in the selection that are not common across
+    /// the entire selection are retained (not redirected to the umbrella).
+    #[value(name = "intersection", aliases(["shared-only", "shared", "i", "force", "f"]))]
+    Intersection,
 }
 
 /// Removes the edges to/from nodes in the selection.
@@ -284,6 +347,53 @@ pub fn command_table() -> ActionCommandTable {
                     assert_eq!(inp[idx].content.as_ref(), subgraph);
                     inp[idx].style = style;
                 }
+                A::MakeUmbrella(MakeUmbrella { name: node, mode, .. }) => {
+                    assert_eq!(inp[1].content.as_ref(), node);
+
+                    // invalid if:
+                    //   - node already exists
+                    //   - is exact match + not all nodes in selection have same
+                    //     incoming edges
+                    if view.graph.nodes().contains(node) {
+                        extra.push(Span::styled("  /* node already exists! */", HINT));
+                        inp[1].style = ERR;
+                    } else if *mode == MakeUmbrellaRdepsMode::ExactMatch && {
+                        let first = view.selection_as_node_ids().next().map(|n| view.graph.froms(n).unwrap()).unwrap_or_default();
+                        !view.selection_as_node_ids().all(|n| {
+                            view.graph.froms(n).unwrap() == first
+                        })
+                    } {
+                        // highlight the mode if specified, otherwise the cmd:
+                        let idx = if inp.len() == 3 { 2 } else { 0 };
+                        extra.push(Span::styled("  /* not all nodes in the selection have the same rdeps (`exact`); try using `union` or `intersection`? */", HINT));
+                        inp[idx].style = ERR;
+                    } else {
+                        // on success, provide feedback:
+                        //   - net edge count ±
+                        match view.make_new_umbrella(node, *mode) {
+                            Err(e) => {
+                                inp[0].style = ERR;
+                                extra.push(Span::styled(format!("  /* error: {e} */"), HINT))
+                            }
+                            Ok((_, (removed, added))) => {
+                                inp[1].style = VALID_NODE;
+                                extra.extend([
+                                    Span::styled("  /*", HINT),
+                                    Span::styled(" ✓  ", HINT.fg(Color::Green)),
+                                    Span::styled(
+                                        format!(
+                                            "success! removes {} edges, adds {} edges; net: {} */ ",
+                                            removed,
+                                            added,
+                                            added as isize - removed as isize,
+                                        ),
+                                        HINT,
+                                    ),
+                                ]);
+                            },
+                        }
+                    }
+                },
 
                 // Only invalid if the query yields no nodes but we won't check
                 // for that here (could be expensive).
@@ -308,9 +418,9 @@ pub fn command_table() -> ActionCommandTable {
                 // Check the tab's name for validity? nah
                 A::Export(Export { filename: None }) => {}
 
-                // TODO: provide visual feedback? (about whether the remove will
-                // succeed)
-                // gated on the guy being small..
+                // Provide visual feedback about whether the remove will succeed
+                // (gated on the selection being small so responsiveness doesn't
+                // suffer..)
                 A::RemoveSelection(Remove { config, .. }) => {
                     if view.selection.len() <= 50 {
                         let selection = view.selection_as_node_ids();
@@ -329,7 +439,7 @@ pub fn command_table() -> ActionCommandTable {
                                     format!(
                                         "success! yields {} nodes, {} edges */ ",
                                         view.graph.nodes_len(),
-                                        view.graph.edges_len()
+                                        view.graph.edges_len(),
                                     ),
                                     HINT,
                                 ),

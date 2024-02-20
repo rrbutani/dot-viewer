@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     fmt::Display,
+    fmt::Write,
     iter, mem,
 };
 
@@ -11,14 +12,14 @@ use crate::viewer::{
     utils::{List, Tree, Trie},
 };
 
-use graphviz_rs::{prelude::*, graphs::graph::WalkDirections};
+use graphviz_rs::{graphs::graph::WalkDirections, prelude::*};
 
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
-use log::info;
+use log::{error, info};
 use rayon::prelude::*;
 use regex::Regex;
 
-use super::SearchMode;
+use super::{action::MakeUmbrellaRdepsMode, SearchMode};
 
 type Matcher = fn(&str, &str, &Graph) -> Option<Vec<usize>>;
 
@@ -352,8 +353,6 @@ impl View {
     ///
     /// We expect to only call this function when the focus is on the node list.
     pub fn toggle(&mut self) -> DotViewerResult<()> {
-
-
         let node = self
             .get_focused_node_from_focused_list()
             .ok_or_else(|| DotViewerError::ViewerError("no node selected".to_string()))?;
@@ -366,7 +365,9 @@ impl View {
 // I cannot figure out how to express this inline; seems like we'd want
 // `impl for<'g> FnOnce(&'g Graph) -> Result<(impl Iterator<Item = &'g NodeId> + 'g), _>`
 // but that is not allowed yet.
-pub trait ProduceGraphNodeIterFn<'g>: FnOnce(&'g Graph) -> Result<Self::It, DotViewerError> {
+pub trait ProduceGraphNodeIterFn<'g>:
+    FnOnce(&'g Graph) -> Result<Self::It, DotViewerError>
+{
     type It: Iterator<Item = &'g NodeId> + 'g;
 }
 impl<'g, I, F> ProduceGraphNodeIterFn<'g> for F
@@ -378,7 +379,7 @@ where
 }
 
 impl View {
-    pub(crate) fn selection_as_node_ids(&self) -> impl Iterator<Item = &NodeId> {
+    pub(crate) fn selection_as_node_ids(&self) -> impl Iterator<Item = &NodeId> + Clone {
         self.selection.iter().map(|&id| &self.current.items[id])
     }
 
@@ -531,9 +532,9 @@ impl View {
         // TODO: spin this pre-check step off and have `validate` use it too..
         match &mut kind {
             // If not specified, use the focused node for these:
-            Neighbors { center: node, .. } |
-            Parents { bottom: node, .. } |
-            Children { root: node, .. } => {
+            Neighbors { center: node, .. }
+            | Parents { bottom: node, .. }
+            | Children { root: node, .. } => {
                 if node.is_none() {
                     let current_focus = self.get_focused_node_from_focused_list()
                         .ok_or_else(|| DotViewerError::CommandError("no node specified for selection command and no node currently focused".to_string()))?;
@@ -544,15 +545,16 @@ impl View {
             // already specified we default to flipping the current node:
             Toggle { node } => {
                 if op.is_none() {
-                    let idx = self.current_node_to_idx_map.get(node)
-                        .ok_or_else(|| DotViewerError::CommandError(format!("node `{node}` does not exist")))?;
+                    let idx = self.current_node_to_idx_map.get(node).ok_or_else(|| {
+                        DotViewerError::CommandError(format!("node `{node}` does not exist"))
+                    })?;
                     op = Some(if self.selection.contains(idx) {
                         SelectionOp::Difference // remove the node
                     } else {
                         SelectionOp::Union // add the node
                     });
                 }
-            },
+            }
             // For search we want to actually get the state from the last search
             // query:
             Search { kind, pattern } => {
@@ -564,55 +566,57 @@ impl View {
                 } else {
                     return Err(DotViewerError::CommandError(
                         "cannot update the selection using the last search result; there is no previous search result!".to_string()
-                    ))
+                    ));
                 }
-            },
+            }
 
-            SubGraph { .. } => { },
+            SubGraph { .. } => {}
 
-            Clear => if op.is_some() {
-                return Err(DotViewerError::CommandError(
-                    "don't use ops with clear".to_string()
-                ))
-            },
+            Clear => {
+                if op.is_some() {
+                    return Err(DotViewerError::CommandError(
+                        "don't use ops with clear".to_string(),
+                    ));
+                }
+            }
             RegisteredCommand { .. } => todo!(),
         }
 
         // Now we can do the actual processing:
         #[allow(clippy::unit_arg)]
         match &kind {
-            Neighbors { depth, center: node } |
-            Parents { depth, bottom: node } |
-            Children { depth, root: node } => self.update_selection_with_node_ids(
-                op,
-                |graph| Ok(
-                    graph
-                        .find_subset::<String>(node.as_ref().expect("node filled in"), *depth, match &kind {
+            Neighbors { depth, center: node }
+            | Parents { depth, bottom: node }
+            | Children { depth, root: node } => self.update_selection_with_node_ids(op, |graph| {
+                Ok(graph
+                    .find_subset::<String>(
+                        node.as_ref().expect("node filled in"),
+                        *depth,
+                        match &kind {
                             Neighbors { .. } => WalkDirections::Both,
                             Parents { .. } => WalkDirections::From,
                             Children { .. } => WalkDirections::To,
                             _ => unreachable!(),
-                        })?
-                        .into_iter()
-                )
-            ),
-            SubGraph { subgraph } => self.update_selection_with_node_ids(
-                op,
-                |graph: &Graph| Ok(
-                    graph
-                        .search_subgraph(subgraph)
-                        .ok_or_else(|| DotViewerError::CommandError(
-                            format!("subgraph {subgraph} does not exist!")
-                        ))?
-                        .nodes()
-                        .into_iter()
-                )
-            ),
+                        },
+                    )?
+                    .into_iter())
+            }),
+            SubGraph { subgraph } => self.update_selection_with_node_ids(op, |graph: &Graph| {
+                Ok(graph
+                    .search_subgraph(subgraph)
+                    .ok_or_else(|| {
+                        DotViewerError::CommandError(format!("subgraph {subgraph} does not exist!"))
+                    })?
+                    .nodes()
+                    .into_iter())
+            }),
             Toggle { node } => Ok(self.update_selection_with_node_idxes(op, {
                 if let Some(&id) = self.current_node_to_idx_map.get(node) {
                     [id].into_iter()
                 } else {
-                    return Err(DotViewerError::CommandError(format!("node {node} does not exist")));
+                    return Err(DotViewerError::CommandError(format!(
+                        "node {node} does not exist"
+                    )));
                 }
             })),
             Clear => Ok(self.update_selection_with_node_idxes(op, [].into_iter())),
@@ -634,6 +638,128 @@ impl View {
 
         Ok(())
     }
+}
+
+// TODO: expose to rhai?
+// TODO: move elsewhere? graph utils module? into `dot-graph`?
+// TODO: move some of these data structures (i.e. subgraph map) into dot-graph?
+fn find_deepest_common_subgraph<'a>(
+    graph: &Graph,
+    subgraphs: impl Iterator<Item = &'a GraphId>,
+) -> Result<GraphId, DotGraphError> {
+    let root_subgraph = graph.id();
+
+    // TODO: yield error if element of `subgraphs` isn't in the graph...
+
+    // Unfortunately we don't have `subgraph -> parent subgraph`
+    // mappings; only `subgraph -> child(ren) subgraph(s)`.
+    //
+    // For now we just construct the subgraph to parent map on demand:
+    // TODO: spin off? move to graph crate?
+    let subgraph_to_parent_map = {
+        // TODO: we're basically re-creating `Graph.subtree` here? (which isn't
+        // made public in `dot-graph` unfortunately)...
+        let mut map = HashMap::with_capacity(graph.subgraphs_len());
+
+        // going to make `root` is it's own parent, for simplicity:
+        map.insert(root_subgraph, root_subgraph);
+
+        // Relying on the fact that subgraphs only have one parent..
+        fn visit_subgraphs<'g>(
+            graph: &'g Graph,
+            parent_subgraph: &'g NodeId,
+            map: &'_ mut HashMap<&'g NodeId, &'g NodeId>,
+        ) {
+            for child_subgraph in graph.search_subgraph(parent_subgraph).unwrap().subgraphs() {
+                map.insert(child_subgraph, parent_subgraph);
+                visit_subgraphs(graph, child_subgraph, map) // DFS
+            }
+        }
+
+        // Start at the root:
+        visit_subgraphs(graph, root_subgraph, &mut map);
+
+        map
+    };
+
+    // yields elements "backwards"; `subgraph` first, `root_subgraph`
+    // last
+    fn find_path_to_root_subgraph<'g: 'h, 'h>(
+        subgraph: &'g NodeId,
+        to_parent_map: &'h HashMap<&'g NodeId, &'g NodeId>,
+    ) -> impl Iterator<Item = &'g NodeId> + 'h {
+        let mut subgraph = Some(subgraph);
+        iter::from_fn(move || {
+            if let Some(curr) = subgraph {
+                let next = to_parent_map[curr];
+                subgraph = if next == curr { None } else { Some(next) };
+
+                Some(curr)
+            } else {
+                None
+            }
+        })
+    }
+
+    let mut it = subgraphs; // enclosing subgraphs of the removed nodes
+    let mut current_longest_common_subgraph_path = it
+        .next()
+        .map(|sub| {
+            let mut path: Vec<_> =
+                find_path_to_root_subgraph(sub, &subgraph_to_parent_map).collect();
+            path.reverse();
+            path
+        })
+        .unwrap_or(vec![root_subgraph]);
+    let mut subgraphs_in_current_path: HashSet<&NodeId> =
+        current_longest_common_subgraph_path.iter().cloned().collect();
+
+    for subgraph in it {
+        // Possibilities:
+        //  - this subgraph is a (potentially transitive) subgraph of
+        //    `current`, meaning nothing changes
+        //    + i.e. the current path is a _prefix_ of this subgraph's
+        //      path
+        //  - this subgraph's path diverges from the current subgraph's
+        //    path; our path shortens to the common prefix of the paths
+        let last_common_path_elem = 'common: {
+            for subgraph_path_elem in find_path_to_root_subgraph(subgraph, &subgraph_to_parent_map)
+            {
+                if subgraphs_in_current_path.contains(subgraph_path_elem) {
+                    // We've reached something in common!
+                    break 'common subgraph_path_elem;
+                } else {
+                    // Anything this path has that our current path does
+                    // not is, by definition, not in the common prefix:
+                    continue;
+                }
+            }
+
+            unreachable!(
+                "subgraph `{subgraph}` had no common parent subgraphs
+                with subgraph `{}` (path: `{:?}`) but that's not
+                supposed to be possible...",
+                current_longest_common_subgraph_path.last().unwrap(),
+                current_longest_common_subgraph_path,
+            );
+        };
+
+        // Now we must discard elements from our path until we've pared
+        // it down to the last common path element:
+        loop {
+            if *current_longest_common_subgraph_path.last().expect("common prefix with length > 0")
+                == last_common_path_elem
+            {
+                break;
+            } else {
+                let last = current_longest_common_subgraph_path.pop().unwrap();
+                assert!(subgraphs_in_current_path.remove(last));
+            }
+        }
+    }
+
+    // TODO: yield an error?
+    Ok(current_longest_common_subgraph_path.last().map(|&s| s.clone()).unwrap())
 }
 
 impl View {
@@ -801,121 +927,8 @@ impl View {
         //
         // We'll place the node in the highest common subgraph between the
         // removed nodes;
-        let subgraph_id = {
-            let root_subgraph = self.graph.id();
+        let subgraph_id = find_deepest_common_subgraph(&self.graph, removed_nodes.values())?;
 
-            // Unfortunately we don't have `subgraph -> parent subgraph`
-            // mappings; only `subgraph -> child(ren) subgraph(s)`.
-            //
-            // For now we just construct the subgraph to parent map on demand:
-            // TODO: spin off? move to graph crate?
-            let subgraph_to_parent_map = {
-                let mut map = HashMap::with_capacity(self.graph.subgraphs_len());
-
-                // going to make `root` is it's own parent, for simplicity:
-                map.insert(root_subgraph, root_subgraph);
-
-                // Relying on the fact that subgraphs only have one parent..
-                fn visit_subgraphs<'g>(
-                    graph: &'g Graph,
-                    parent_subgraph: &'g NodeId,
-                    map: &'_ mut HashMap<&'g NodeId, &'g NodeId>,
-                ) {
-                    for child_subgraph in
-                        graph.search_subgraph(parent_subgraph).unwrap().subgraphs()
-                    {
-                        map.insert(child_subgraph, parent_subgraph);
-                        visit_subgraphs(graph, child_subgraph, map) // DFS
-                    }
-                }
-
-                // Start at the root:
-                visit_subgraphs(&self.graph, root_subgraph, &mut map);
-
-                map
-            };
-
-            // yields elements "backwards"; `subgraph` first, `root_subgraph`
-            // last
-            fn find_path_to_root_subgraph<'g: 'h, 'h>(
-                subgraph: &'g NodeId,
-                to_parent_map: &'h HashMap<&'g NodeId, &'g NodeId>,
-            ) -> impl Iterator<Item = &'g NodeId> + 'h {
-                let mut subgraph = Some(subgraph);
-                iter::from_fn(move || {
-                    if let Some(curr) = subgraph {
-                        let next = to_parent_map[curr];
-                        subgraph = if next == curr { None } else { Some(next) };
-
-                        Some(curr)
-                    } else {
-                        None
-                    }
-                })
-            }
-
-            let mut it = removed_nodes.values(); // enclosing subgraphs of the removed nodes
-            let mut current_longest_common_subgraph_path = it
-                .next()
-                .map(|sub| {
-                    let mut path: Vec<_> =
-                        find_path_to_root_subgraph(sub, &subgraph_to_parent_map).collect();
-                    path.reverse();
-                    path
-                })
-                .unwrap_or(vec![root_subgraph]);
-            let mut subgraphs_in_current_path: HashSet<&NodeId> =
-                current_longest_common_subgraph_path.iter().cloned().collect();
-
-            for subgraph in it {
-                // Possibilities:
-                //  - this subgraph is a (potentially transitive) subgraph of
-                //    `current`, meaning nothing changes
-                //    + i.e. the current path is a _prefix_ of this subgraph's
-                //      path
-                //  - this subgraph's path diverges from the current subgraph's
-                //    path; our path shortens to the common prefix of the paths
-                let last_common_path_elem = 'common: {
-                    for subgraph_path_elem in
-                        find_path_to_root_subgraph(subgraph, &subgraph_to_parent_map)
-                    {
-                        if subgraphs_in_current_path.contains(subgraph_path_elem) {
-                            // We've reached something in common!
-                            break 'common subgraph_path_elem;
-                        } else {
-                            // Anything this path has that our current path does
-                            // not is, by definition, not in the common prefix:
-                            continue;
-                        }
-                    }
-
-                    unreachable!(
-                        "subgraph `{subgraph}` had no common parent subgraphs
-                        with subgraph `{}` (path: `{:?}`) but that's not
-                        supposed to be possible...",
-                        current_longest_common_subgraph_path.last().unwrap(),
-                        current_longest_common_subgraph_path,
-                    );
-                };
-
-                // Now we must discard elements from our path until we've pared
-                // it down to the last common path element:
-                loop {
-                    if *current_longest_common_subgraph_path
-                        .last()
-                        .expect("common prefix with length > 0")
-                        == last_common_path_elem
-                    {
-                        break;
-                    } else {
-                        let last = current_longest_common_subgraph_path.pop().unwrap();
-                        assert!(subgraphs_in_current_path.remove(last));
-                    }
-                }
-            }
-
-            current_longest_common_subgraph_path.last().map(|&s| s.clone()).unwrap()
-        };
         let label = format!(
             "{name} ({num} nodes)\n\n(Stub of: {selection_info})",
             name = new_node_name,
@@ -923,19 +936,60 @@ impl View {
             num = removed_nodes.len()
         );
 
-        let alt_text = format!(
+        let mut alt_text = format!(
             "Stub of:{}",
             removed_nodes.keys().map(|n| n.id().clone()).collect::<Vec<_>>().join("\n  -") // TODO: use labels if present instead of `NodeId`
         );
-        let node = Node::new(
-            new_node_name.clone(),
-            HashSet::from([
+        // Add tooltip of existing labels if present:
+        for n in removed_nodes.keys() {
+            if let Some(tooltip) = n.attrs().get("tooltip") {
+                writeln!(
+                    &mut alt_text,
+                    "\n{sep}\nTooltip of `{name}`:\n{tooltip}",
+                    sep = "=".repeat(100),
+                    name = n.id(), // TODO: label if present?
+                    tooltip = tooltip.value(),
+                )
+                .unwrap();
+            }
+        }
+
+        // preserve common attributes:
+        let common_attrs = 'common: {
+            let Some(smallest_attr_list) =
+                removed_nodes.keys().map(|n| n.attrs()).min_by_key(|a| a.len())
+            else {
+                break 'common HashSet::new();
+            };
+
+            let mut common = HashSet::with_capacity(smallest_attr_list.len());
+            for a in smallest_attr_list {
+                // note: Hash/Eq impls for `Attr` only consider the key; we have
+                // to compare the values manually here
+                if removed_nodes.keys().all(|n| {
+                    if let Some(other) = n.attrs().get(a) {
+                        other.value() == a.value() && other.is_html() == a.is_html()
+                    } else {
+                        false
+                    }
+                }) {
+                    common.insert(a.clone());
+                }
+            }
+            common
+        };
+        // Give precedence to the explicitly set attrs:
+        let attrs = {
+            let mut attrs = common_attrs;
+            attrs.extend([
                 Attr::new("peripheries".to_string(), "2".to_string(), false),
                 Attr::new("label".to_string(), label, false),
                 Attr::new("tooltip".to_string(), alt_text, false),
                 // TODO: shape, fill, style
-            ]),
-        );
+            ]);
+            attrs
+        };
+        let node = Node::new(new_node_name.clone(), attrs);
         graph.add_node(node, Some(subgraph_id))?;
 
         // We want to restore edges that aren't within the graph formed by the
@@ -1011,7 +1065,7 @@ impl View {
             graph,
         )?;
 
-        // can't copy search; node list is difference
+        // can't copy search; node list is different
         self.copy_focus(&mut view, true)?;
 
         Ok(view)
@@ -1031,6 +1085,216 @@ impl View {
         Ok(view)
     }
 
+    // returns `(new view, (edges removed, edges added))`
+    pub fn make_new_umbrella(
+        &self,
+        new_node_name: &NodeId,
+        rdeps_mode: MakeUmbrellaRdepsMode,
+    ) -> DotViewerResult<(View, (usize, usize))> {
+        use MakeUmbrellaRdepsMode::*;
+        const PAIR_TO_ATTR: fn((&str, &str)) -> Attr =
+            |(k, v)| Attr::new(k.to_string(), v.to_string(), false);
+
+        // We want to infer the subgraph to add to by finding the deepest shared
+        // subgraph of the selection nodes
+        //
+        // unfortunately getting the enclosing subgraph ID of a given node is... not
+        // trivial; `dot-graph` only stores `subgraph -> [node id]` lists and
+        // doesn't give an easy way to go the other way
+        //
+        // for now we do something very inefficient (TODO: fix...)
+        let subgraph_id = find_deepest_common_subgraph(&self.graph, {
+            let mut node_to_enclosing_subgraph = HashMap::with_capacity(self.graph.nodes_len());
+            for s in self.graph.subgraphs() {
+                for n in s.nodes() {
+                    let prev = node_to_enclosing_subgraph.insert(n, s.id());
+                    assert_eq!(prev, None);
+                }
+            }
+
+            let subgraphs = self.selection_as_node_ids().map(|n| node_to_enclosing_subgraph[n]).collect::<HashSet<_>>();
+
+            subgraphs.into_iter()
+        })?;
+
+        let mut graph = self.graph.clone();
+
+        // Find rdeps (i.e. nodes with edges that have a destination in our
+        // selection) whose edges we are going to rewrite:
+        let mut rdeps: HashSet<&NodeId> = {
+            // grab the first selection nodes' rdeps
+            //
+            // note that this node's rdeps will get processed twice: that's
+            // fine; the loop below is idempotent
+            self.selection_as_node_ids()
+                .next()
+                .map(|n| self.graph.froms(n).unwrap())
+                .unwrap_or_default()
+        };
+        for n in self.selection_as_node_ids() {
+            let rdeps_for_node = self.graph.froms(n).unwrap();
+            match rdeps_mode {
+                ExactMatch => {
+                    if rdeps != rdeps_for_node {
+                        error!("can't make umbrella mode with exact rdeps mode; {rdeps:?} vs {rdeps_for_node:?}");
+                        return Err(DotViewerError::CommandError(format!(
+                            "Cannot create umbrella with rdeps mode {rdeps_mode:?}; not all nodes in selection have the same rdeps; difference: {:?} in {rdeps:?} vs. {rdeps_for_node:?}",
+                            rdeps.symmetric_difference(&rdeps_for_node),
+                        )));
+                    }
+                }
+                Union => rdeps_for_node.into_iter().for_each(|n| {
+                    rdeps.insert(n);
+                }),
+                Intersection => {
+                    rdeps = &rdeps & &rdeps_for_node;
+                }
+            }
+        }
+
+        // NOTE: in order to prevent cycles we need to exclude other nodes in
+        // the selection.
+        //
+        // (this is only possible under union mode; i.e. self-edges are not
+        // possible)
+        if let Union = rdeps_mode {
+            for n in self.selection_as_node_ids() {
+                if rdeps.remove(n) {
+                    info!("excluding edges **from** {n} from being rewritten as it's in the selection");
+                }
+            }
+        }
+
+
+        // Keep track of the number of edges from each rdep we're removing.
+        let mut rdep_edge_count = HashMap::<_, usize>::with_capacity(rdeps.len());
+
+        // Remove incoming edges from rdeps to selection nodes:
+        let mut edges_to_remove = Vec::with_capacity(rdeps.len() * self.selection.len());
+        for n in self.selection_as_node_ids() {
+            for from in self.graph.froms(n).unwrap() {
+                if rdeps.contains(from) {
+                    // NOTE: not tailport/headport aware...
+                    edges_to_remove.push(EdgeId {
+                        from: from.clone(),
+                        tailport: None,
+                        to: n.clone(),
+                        headport: None,
+                    });
+
+                    *rdep_edge_count.entry(from).or_default() += 1;
+                }
+            }
+        }
+        info!("removing edges: {edges_to_remove:?}");
+        let removed_edges_map = graph.remove_edges(&edges_to_remove)?;
+        let num_edges_removed = edges_to_remove.len();
+
+        // Add umbrella node:
+        let presumptive_num_edges_added = self.selection.len() + rdeps.len();
+        let label = format!(
+            "{name} ({num} nodes)\n\n(umbrella: {selection_info})\n(net edges: {net})",
+            name = new_node_name,
+            selection_info = self.selection_info.abbreviated(),
+            num = self.selection.len(),
+            net = presumptive_num_edges_added as isize - num_edges_removed as isize,
+        );
+        graph.add_node(
+            Node::new(
+                new_node_name.to_string(),
+                HashSet::from(
+                    [
+                        ("peripheries", "2"),
+                        ("label", &label),
+                        ("shape", "invhouse"),
+                        ("style", "filled"),
+                        ("fillcolor", "#F0387860"),
+                    ]
+                    .map(PAIR_TO_ATTR),
+                ),
+            ),
+            Some(subgraph_id.clone()),
+        )?;
+
+        let mut num_edges_added = 0;
+        // Add edges from umbrella to selection nodes:
+        info!("adding edges from umbrella node {new_node_name} to {} nodes", self.selection.len());
+        for n in self.selection_as_node_ids() {
+            let edge = Edge::new(
+                EdgeId::new(new_node_name.to_string(), None, n.to_string(), None),
+                HashSet::from(
+                    [
+                        ("arrowhead", "vee"),
+                        ("arrowsize", "00.8"),
+                        ("style", "dashed"),
+                        ("color", "#F03878"),
+                    ]
+                    .map(PAIR_TO_ATTR),
+                ),
+            );
+            graph.add_edge(edge, Some(subgraph_id.clone()))?;
+
+            num_edges_added += 1;
+        }
+
+        // Add edges from rdeps to the umbrella (rewritten):
+        //
+        // To figure out which subgraph to place these edges in we: scan the
+        // removed edges and take the subgraph of the first edge that came from
+        // the given rdep node.
+        info!("adding edges from rdeps to umbrella node ({new_node_name}): {rdeps:?}");
+        let subgraphs_for_new_rdep_to_umbrella_edges = {
+            let mut map = HashMap::with_capacity(rdeps.len());
+            for (e, subgraph) in &removed_edges_map {
+                let from = e.id().from();
+                if !map.contains_key(from) {
+                    map.insert(from, subgraph);
+                }
+            }
+            map
+        };
+        for r in rdeps {
+            // NOTE: not preserving the original edge's attrs.
+            let count = rdep_edge_count[r];
+            let subgraph = subgraphs_for_new_rdep_to_umbrella_edges[r].clone();
+
+            let edge = Edge::new(
+                EdgeId::new(r.to_string(), None, new_node_name.to_string(), None),
+                HashSet::from(
+                    [
+                        ("arrowhead", "vee"),
+                        ("color", "#0d0d73"),
+                        ("fontcolor", "#0d0d73"),
+                        ("label", &format!("{count}×")),
+                    ]
+                    .map(PAIR_TO_ATTR),
+                ),
+            );
+            graph.add_edge(edge, Some(subgraph))?;
+
+            num_edges_added += 1;
+        }
+
+        assert_eq!(num_edges_added, presumptive_num_edges_added);
+
+        // TODO: when using intersection mode are we still safe from cycles?
+        let mut view = self
+            .new_with_selection(
+                format!(
+                    "{} - +umbrella({new_node_name} = {})",
+                    self.title,
+                    self.selection_info.abbreviated()
+                ),
+                graph,
+            )
+            .expect("introducing a new umbrella node cannot create cycles");
+
+        // can't copy search state; the node list is different (new node)
+        self.copy_focus(&mut view, true)?;
+
+        Ok((view, (num_edges_removed, num_edges_added)))
+    }
+
     // more like ancestors..
     pub fn parents(&self, depth: Option<usize>) -> DotViewerResult<View> {
         let id = self.current_id();
@@ -1048,7 +1312,7 @@ impl View {
         self.new_with_selection(format!("{title} - parents-{id}-{suffix}"), graph)
     }
 
-    // really it's more like progeny?
+    // really it's more like progeny? (i.e. not just immediate children)
     pub fn children(&self, depth: Option<usize>) -> DotViewerResult<View> {
         let id = self.current_id();
         let graph = self.graph.children(&id, depth)?;
@@ -1163,7 +1427,6 @@ impl View {
             Focus::Next => self.nexts.selected(),
         }
     }
-
 
     pub fn matched_id(&self) -> Option<String> {
         self.matches.selected().map(|(idx, _)| self.current.items[idx].clone())

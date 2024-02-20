@@ -264,6 +264,23 @@ Key | Actions
   - [x] `f` and `b` bindings for forward a page, back a page
     + [x] also page up/page down
 
+  - [x] `mk-grouped` command
+    - alternate names:
+      + mk-umbrella? (i like this one)
+      + mk-top?
+      + mk-placeholder
+      + mk-sentinel
+      + mk-marker
+    - given a set of nodes (`N`) introduces a placeholder node (`P`) that depends on all of `N`
+      + rdeps of `N` are rewritten to depend on `P` instead of the nodes in `N`
+    - this is like stub except it _doesn't_ replace
+    - modes for collecting rdeps:
+      - exact-match: by default error if not all of the nodes in the group have the same rdeps (but allow overriding this check)
+      - union: nodes that any of `N` have as an rdep
+      - intersection: only nodes that all of `N` have as an rdep
+
+<!-- todo: merge metadata for `mk-stub`... -->
+
 ---
 
   - [ ] TODO: tab name abbrev in middle (i.e. `...`, based on window width?)
