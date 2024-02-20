@@ -307,3 +307,11 @@ Key | Actions
         - error on collision
     + tricky, tricky, tricky
     + note: we'd want to add this to the logs for all current tabs!
+
+TODO(perf opportunity):
+  - opening graphs in `xdot` takes a while, blocked on `dot -Txdot`
+    + on every update to the graph this is rerun, from scratch
+  - `xdot` has an option to assume that inputs are already in `xdot` format...
+  - if we could have `dot-viewer` emit `xdot` (and cache stuff such that generating a new `xdot` output for a graph after some changes have been made is cheap) this could greatly speed up iteration...
+    + xdot format details: https://gensoft.pasteur.fr/docs/graphviz/2.42.3/info/output.html#d:xdot
+    + there's no easy solution w.r.t to incrementality for recomputing layout and such afaik but for filters/attribute changes (i.e. selection changes) we can just reuse the existing layout

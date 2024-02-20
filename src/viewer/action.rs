@@ -358,10 +358,12 @@ pub fn command_table() -> ActionCommandTable {
                         extra.push(Span::styled("  /* node already exists! */", HINT));
                         inp[1].style = ERR;
                     } else if *mode == MakeUmbrellaRdepsMode::ExactMatch && {
-                        let first = view.selection_as_node_ids().next().map(|n| view.graph.froms(n).unwrap()).unwrap_or_default();
-                        !view.selection_as_node_ids().all(|n| {
-                            view.graph.froms(n).unwrap() == first
-                        })
+                        let first = view
+                            .selection_as_node_ids()
+                            .next()
+                            .map(|n| view.graph.froms(n).unwrap())
+                            .unwrap_or_default();
+                        !view.selection_as_node_ids().all(|n| view.graph.froms(n).unwrap() == first)
                     } {
                         // highlight the mode if specified, otherwise the cmd:
                         let idx = if inp.len() == 3 { 2 } else { 0 };
@@ -390,10 +392,10 @@ pub fn command_table() -> ActionCommandTable {
                                         HINT,
                                     ),
                                 ]);
-                            },
+                            }
                         }
                     }
-                },
+                }
 
                 // Only invalid if the query yields no nodes but we won't check
                 // for that here (could be expensive).

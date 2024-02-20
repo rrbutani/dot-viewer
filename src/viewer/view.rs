@@ -1112,7 +1112,10 @@ impl View {
                 }
             }
 
-            let subgraphs = self.selection_as_node_ids().map(|n| node_to_enclosing_subgraph[n]).collect::<HashSet<_>>();
+            let subgraphs = self
+                .selection_as_node_ids()
+                .map(|n| node_to_enclosing_subgraph[n])
+                .collect::<HashSet<_>>();
 
             subgraphs.into_iter()
         })?;
@@ -1164,7 +1167,6 @@ impl View {
                 }
             }
         }
-
 
         // Keep track of the number of edges from each rdep we're removing.
         let mut rdep_edge_count = HashMap::<_, usize>::with_capacity(rdeps.len());

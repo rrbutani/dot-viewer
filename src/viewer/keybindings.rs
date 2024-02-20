@@ -40,7 +40,7 @@ impl App {
                 code: KeyCode::Enter | KeyCode::Char('o'),
                 modifiers: KeyModifiers::CONTROL,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
-                state: _
+                state: _,
             } => self.enter(true),
             KeyEvent {
                 code: KeyCode::Char(c @ ('c' | 'q')),

@@ -419,17 +419,19 @@ pub fn command_table() -> SelectionCommandTable {
 
                 use SelectionKind::*;
                 match &kind {
-                    Neighbors { center: Some(node), .. } |
-                    Parents { bottom: Some(node), .. } |
-                    Children { root: Some(node), .. } |
-                    Toggle { node } => {
+                    Neighbors { center: Some(node), .. }
+                    | Parents { bottom: Some(node), .. }
+                    | Children { root: Some(node), .. }
+                    | Toggle { node } => {
                         let idx = match kind {
                             Neighbors { .. } | Parents { .. } | Children { .. } => 2,
                             Toggle { .. } => 1,
                             _ => unreachable!(),
                         };
 
-                        let style = if view.graph.nodes().contains(node) { VALID_NODE } else {
+                        let style = if view.graph.nodes().contains(node) {
+                            VALID_NODE
+                        } else {
                             extra.push(Span::styled("  /* node doesn't exist! */", HINT));
 
                             ERR
@@ -437,9 +439,11 @@ pub fn command_table() -> SelectionCommandTable {
 
                         assert_eq!(inp[idx].content.as_ref(), node);
                         inp[idx].style = style;
-                    },
+                    }
                     SubGraph { subgraph } => {
-                        let style = if view.graph.subgraphs().contains(subgraph) { VALID_NODE } else {
+                        let style = if view.graph.subgraphs().contains(subgraph) {
+                            VALID_NODE
+                        } else {
                             extra.push(Span::styled("  /* subgraph does not exist! */", HINT));
 
                             ERR
@@ -447,17 +451,17 @@ pub fn command_table() -> SelectionCommandTable {
 
                         assert_eq!(inp[1].content.as_ref(), subgraph);
                         inp[1].style = style;
-                    },
+                    }
                     Search { .. } => {
                         if view.last_search.is_none() {
-                            extra.push(Span::styled(
-                                "  /* no previous search result! */", ERR
-                            ));
+                            extra.push(Span::styled("  /* no previous search result! */", ERR));
                         }
-                    },
+                    }
 
                     // If no node is specified:
-                    Neighbors { center: None, .. } | Parents { bottom: None, .. } | Children { root: None, .. } => {
+                    Neighbors { center: None, .. }
+                    | Parents { bottom: None, .. }
+                    | Children { root: None, .. } => {
                         if let Some(node) = view.get_focused_node_from_focused_list() {
                             extra.extend([
                                 Span::styled("  /* using focused node: `", HINT),
@@ -465,18 +469,19 @@ pub fn command_table() -> SelectionCommandTable {
                                 Span::styled("` */", HINT),
                             ])
                         } else {
-                            extra.extend([
-                                Span::styled("  /* no node is focused, please specify a node explicitly */", ERR)
-                            ])
+                            extra.extend([Span::styled(
+                                "  /* no node is focused, please specify a node explicitly */",
+                                ERR,
+                            )])
                         }
                     }
-                    Clear => { },
+                    Clear => {}
                     // If we're here it's a real command; don't know anything
                     // else about it:
                     //
                     // eventually we can let scripts provide a hook for this
                     // (TODO)
-                    RegisteredCommand { .. } => { },
+                    RegisteredCommand { .. } => {}
                 }
 
                 Some(extra)

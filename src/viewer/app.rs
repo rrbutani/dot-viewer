@@ -6,7 +6,7 @@ use crate::viewer::{
     error::{DotViewerError, DotViewerResult},
     help,
     modes::{Mode, PopupMode, SearchMode},
-    selection::{self, SelectionCommandTable, SelectionCommand},
+    selection::{self, SelectionCommand, SelectionCommandTable},
     success::Success,
     utils::{Input, List, Table, Tabs},
     view::View,
@@ -267,8 +267,8 @@ impl App {
 
         // TODO: report back how many nodes added/removed from the selection?
         // maybe
-        let ret = self.tabs.selected_mut().apply_selection_command(op, kind)
-            .map(|()| Success::default());
+        let ret =
+            self.tabs.selected_mut().apply_selection_command(op, kind).map(|()| Success::default());
 
         if ret.is_err() || !ctrl_pressed {
             self.set_normal_mode();
@@ -410,7 +410,8 @@ impl App {
     }
 
     pub fn make_umbrella(
-        &mut self, MakeUmbrella { name, mode, in_place }: MakeUmbrella,
+        &mut self,
+        MakeUmbrella { name, mode, in_place }: MakeUmbrella,
     ) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.make_new_umbrella(&name, mode).map(|(v, _)| v), in_place)
     }
