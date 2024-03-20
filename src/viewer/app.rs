@@ -606,7 +606,7 @@ fn write_graph<'a>(
         }
     }
 
-    let write_graph = |mut f: &mut fs::File| graph.to_dot(&mut f);
+    let write_graph = |mut f: &mut fs::File| graph.to_dot(true, &mut f);
     if let Some(filename) = &additional_filename {
         write_file_by_swapping_into_place(
             open_options,
