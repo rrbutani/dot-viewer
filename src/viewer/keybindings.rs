@@ -107,7 +107,9 @@ impl App {
                         .remove_nodes(Remove { config: cfg, in_place: true }, [curr_node.clone()])
                         .map(|_| Success::Silent);
                 }
-            }
+            },
+            // TODO: add some kind of confirmation? Undo?
+            'E' => self.remove_currently_focused_edge(true)?,
             _ => Err(DotViewerError::KeyError(KeyCode::Char(c)))?,
         };
 

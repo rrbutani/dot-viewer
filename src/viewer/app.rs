@@ -382,6 +382,10 @@ impl App {
         )
     }
 
+    pub fn remove_currently_focused_edge(&mut self, in_place: bool) -> DotViewerResult<()> {
+        self.new_view_helper(|curr| curr.remove_currently_focused_edge(), in_place)
+    }
+
     pub fn parents(&mut self, Parents { depth, in_place }: Parents) -> DotViewerResult<()> {
         self.new_view_helper(|curr| curr.parents(depth), in_place)
     }

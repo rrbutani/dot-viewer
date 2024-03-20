@@ -271,6 +271,8 @@ Key | Actions
       + mk-placeholder
       + mk-sentinel
       + mk-marker
+      + mk-proxy
+      + mk-intermediary
     - given a set of nodes (`N`) introduces a placeholder node (`P`) that depends on all of `N`
       + rdeps of `N` are rewritten to depend on `P` instead of the nodes in `N`
     - this is like stub except it _doesn't_ replace

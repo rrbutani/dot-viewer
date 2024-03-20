@@ -76,7 +76,7 @@ pub(crate) struct ViewportInfo {
     pub(crate) next_list_height: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Focus {
     Current,
     Prev,
@@ -155,6 +155,10 @@ impl View {
 
     fn copy_search_state(&self, to: &mut Self) -> DotViewerResult<()> {
         if self.current.items != to.current.items {
+            info!(
+                "failed to copy search state; prev view's current list: {:?}\nnew view's current list: {:?}",
+                self.current.items, to.current.items,
+            );
             return Err(DotViewerError::ViewerError(
                 "attempted to propagate search state onto a view with a different node list"
                     .to_string(),
@@ -171,24 +175,66 @@ impl View {
     /// in `self` until we reach a node that exists in `to` and will use that as
     /// the focus.
     fn copy_focus(&self, to: &mut Self, allow_inexact: bool) -> DotViewerResult<()> {
-        // try to find a new focus point by walking backwards from the old one
-        // (by index -- i.e. position in the old topo-sorted list) until we hit
-        // a node that exists
-        if let Some(old_selected_idx) = self.current.state.selected() {
-            for old_idx_pos in (0..=old_selected_idx).rev() {
-                let node_id = &self.current.items[old_idx_pos];
-                if to.graph.nodes().contains(node_id) {
-                    return to.goto(node_id);
-                } else if !allow_inexact {
-                    // If !allow_inexact we'll fall into this branch on the
-                    // first non-existent node; i.e. we'll always report an
-                    // error complaining about the exact focus point of `self`.
-                    return Err(DotViewerError::ViewerError(format!(
-                        "could not copy focus to tab -- destination tab lacks the node that's currently focused (`{node_id}`)"
-                    )));
+        fn walk_source_list<R>(
+            src_list: &List<NodeId>,
+            to: &mut View,
+            allow_inexact: bool,
+            is_valid_node_for_list: impl Fn(&View, &NodeId) -> Option<R>,
+            select_node_for_dst_list: impl FnOnce(&mut View, &NodeId, R) -> DotViewerResult<()>,
+        ) -> DotViewerResult<()> {
+            // try to find a new focus point by walking backwards from the old one
+            // (by index -- i.e. position in the old topo-sorted list) until we hit
+            // a node that exists
+            if let Some(old_selected_idx) = src_list.state.selected() {
+                for old_idx_pos in (0..=old_selected_idx).rev() {
+                    let node_id = &src_list.items[old_idx_pos];
+                    if let Some(val) = is_valid_node_for_list(to, node_id) {
+                        return select_node_for_dst_list(to, node_id, val);
+                    } else if !allow_inexact {
+                        // If !allow_inexact we'll fall into this branch on the
+                        // first non-existent node; i.e. we'll always report an
+                        // error complaining about the exact focus point of `self`.
+                        return Err(DotViewerError::ViewerError(format!(
+                            "could not copy focus to tab -- destination tab lacks the node that's currently focused (`{node_id}`)"
+                        )));
+                    }
                 }
             }
+
+            Ok(())
         }
+
+        // First, copy the `current` lists's cursor:
+        walk_source_list(
+            &self.current,
+            to,
+            allow_inexact,
+            |view, node_id| view.graph.nodes().contains(node_id).then_some(()),
+            |view, node_id, ()| view.goto(&node_id),
+        )?;
+
+        // Next, if the above succeeded and the same node is still selected in
+        // the `current` list, attempt to copy the cursor for the adjacent
+        // lists:
+        if self.current.selected() == to.current.selected() {
+            walk_source_list(
+                &self.prevs,
+                to,
+                allow_inexact,
+                |view, node_id| view.prevs.items.binary_search(node_id).ok(),
+                |view, _, idx| Ok(view.prevs.select(idx)),
+            )?;
+            walk_source_list(
+                &self.nexts,
+                to,
+                allow_inexact,
+                |view, node_id| view.nexts.items.binary_search(node_id).ok(),
+                |view, _, idx| Ok(view.nexts.select(idx)),
+            )?;
+        }
+
+        // Finally, copy the focus:
+        to.focus = self.focus;
 
         Ok(())
     }
@@ -859,6 +905,59 @@ impl View {
         };
 
         Ok(new_view)
+    }
+
+    /// Fails if the user is not currently focused on an edge.
+    pub fn remove_currently_focused_edge(&self) -> DotViewerResult<View> {
+        use Focus::*;
+        let (pane, is_next) = match self.focus {
+            Current => {
+                return Err(DotViewerError::ViewerError(
+                    "Can only remove an edge when focused on an edge (i.e. prev/next panes)"
+                        .to_string(),
+                ))
+            }
+            Prev => (&self.prevs, false),
+            Next => (&self.nexts, true),
+        };
+
+        let curr = self.current.selected().ok_or_else(|| {
+            DotViewerError::ViewerError(
+                "No node selected; there are no edges to remove".to_string(),
+            )
+        })?;
+        let edge = pane.selected().ok_or_else(|| {
+            DotViewerError::ViewerError(format!(
+                "{} pane is empty; no edge to remove",
+                if is_next { "Next" } else { "Prev" }
+            ))
+        })?;
+        let (from, to) = match is_next {
+            true => (curr, edge),
+            false => (edge, curr),
+        };
+
+        let mut graph = self.graph.clone();
+        graph.remove_edges(&[EdgeId::new(from, None, to, None)])?;
+
+        let mut view = self
+            .new_with_selection(self.title.clone(), graph)
+            .expect("removing edges cannot create cycles");
+
+        // allow inexact; the same nodes should be present but edges are
+        // removed; by definition for this function that includes an edge that's
+        // *focused*
+        self.copy_focus(&mut view, true)?;
+
+        // Allow errors in copying search state; removing edges can change the
+        // topological order, thus invalidating the search results' indexes.
+        //
+        // In the future, as an improvement, we can attempt to remap the search
+        // results onto the new order list in such cases (or we can store the
+        // search results in a HashMap or something similar to begin with).
+        let _ = self.copy_search_state(&mut view);
+
+        Ok(view)
     }
 
     /// Filter down the graph to the current selection.
